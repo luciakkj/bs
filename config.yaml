@@ -1,0 +1,104 @@
+source:
+  use_camera: false
+  camera_id: 0
+  video_path: ""
+  mot17_seq: "bs/data/MOT17/train/MOT17-10-FRCNN/img1/%06d.jpg"
+
+model:
+  model_path: "bs/output/training/mot17_person_gpu_40e_960_v8s_fair/weights/best.pt"
+  device: "0"
+  imgsz: 960
+  augment: true
+  runtime_profile: "balanced"
+  predict_conf: 0.18
+  conf_threshold: 0.18
+  classes: [0]
+
+tracker:
+  track_high_thresh: 0.5
+  track_low_thresh: 0.10
+  new_track_thresh: 0.58
+  match_thresh: 0.8
+  low_match_thresh: 0.5
+  unconfirmed_match_thresh: 0.7
+  max_time_lost: 30
+  min_box_area: 10.0
+  appearance_enabled: true
+  appearance_weight: 0.05
+  appearance_ambiguity_margin: 0.03
+  appearance_feature_mode: "deep_reid"
+  appearance_hist_bins: [6, 3, 3]
+  appearance_min_box_size: 16
+  appearance_reid_model: "mobilenet_v3_small"
+  appearance_reid_weights: ""
+  appearance_reid_device: "0"
+  appearance_reid_input_size: [256, 128]
+
+behavior:
+  roi: [200, 120, 500, 420]
+  roi_mode: "interactive"
+  behavior_mode: "hybrid"
+  enable_intrusion: false
+  enable_cross_line: false
+  enable_loitering: true
+  enable_running: true
+  intrusion_frames: 1
+  cross_line: []
+  loiter_frames: 72
+  loiter_radius: 60.0
+  loiter_speed: 2.2
+  running_speed: 15.57
+  running_frames: 3
+  behavior_model_path: "bs/output/behavior_training/avenue_behavior_temporal_trainsplit_v2_seq72_seqval_seed42/best.pt"
+  behavior_secondary_model_path: "bs/output/behavior_training/avenue_behavior_temporal_v2_seq72_seqval_seq04hardneg_20260331/best.pt"
+  behavior_ensemble_primary_weight: 0.95
+  behavior_ensemble_mode: "weighted"
+  behavior_model_score_thresh: 0.96
+  behavior_model_min_frames: 18
+  behavior_model_max_tracks: 30
+  behavior_model_resume_tracks: 26
+  behavior_secondary_max_tracks: 24
+  behavior_secondary_resume_tracks: 18
+  behavior_secondary_loitering_only: true
+  behavior_model_eval_interval: 3
+  loitering_hybrid_mode: "model_support"
+  loitering_model_support_thresh: 0.86
+  loitering_model_score_thresh: 0.955
+  running_model_score_thresh: 0.75
+  loitering_model_min_frames: 48
+  loitering_activate_frames: 2
+  loitering_support_activate_frames: 4
+  loitering_release_frames: 1
+  loitering_model_max_avg_speed: 2.2
+  loitering_model_max_movement_extent: 75.0
+  loitering_model_max_centroid_radius: 40.0
+  loitering_model_min_stationary_ratio: 0.18
+  loitering_model_min_revisit_ratio: 0.03
+  loitering_model_max_unique_cell_ratio: 0.9
+  loitering_model_min_max_cell_occupancy_ratio: 0.12
+  loitering_model_max_straightness: 0.6
+  loitering_rule_max_displacement_ratio: 0.35
+  loitering_max_neighbor_count: 3
+  loitering_neighbor_radius: 90.0
+  loitering_context_gate_support_only: true
+  running_model_min_avg_speed: 7.0
+  running_model_min_p90_speed: 13.0
+  running_model_min_movement_extent: 80.0
+
+display:
+  window_name: "Intelligent Video Monitor"
+  quit_key: "q"
+  fps_smoothing: 0.95
+
+log:
+  alarm_cooldown_seconds: 2.0
+
+output:
+  enable_event_log: false
+  enable_snapshot: false
+  enable_video_export: false
+  event_log_dir: "bs/output"
+  snapshot_root: "bs/output/snaps"
+  video_output_dir: "bs/output/videos"
+  video_export_fps: 0.0
+  video_codec: "mp4v"

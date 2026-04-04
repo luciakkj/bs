@@ -1,0 +1,11 @@
+{
+  "name": "avenue_behavior_split_v2",
+  "description": "Training-focused hold-out split for Avenue behavior modeling. All currently identifiable running-support sequences are assigned to train; test remains a strict hold-out for final anomaly evaluation.",
+  "train_sequence_ids": ["01", "02", "03", "04", "05", "07", "08", "10", "11", "13", "14", "16", "17", "19", "20"],
+  "test_sequence_ids": ["06", "09", "12", "15", "18", "21"],
+  "notes": [
+    "This split prioritizes sufficient running-positive support in train.",
+    "The hold-out test set remains untouched during pseudo-label generation and model fitting.",
+    "Test sequences are anomaly-only evaluation sequences and may under-represent running-specific cases."
+  ]
+}
