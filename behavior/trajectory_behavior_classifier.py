@@ -433,6 +433,11 @@ class TrajectoryBehaviorClassifier:
         self.model.to(self.device)
         self.model.eval()
 
+    def _aggregate_window_scores(self, scores: list[float]) -> float:
+        if not scores:
+            return 0.0
+        return float(max(scores))
+
     def _candidate_window_sizes(self, frame_count: int, label_name: str | None = None) -> list[int]:
         base_sizes = {
             self.min_frames,
@@ -673,8 +678,10 @@ class TrajectoryBehaviorClassifier:
         best_per_label: dict[str, dict[str, object]] = {
             label_name: {
                 "score": 0.0,
+                "raw_best_score": 0.0,
                 "feature_dict": None,
                 "window_size": 0,
+                "window_scores": [],
             }
             for label_name in labels_to_score
         }
@@ -687,12 +694,19 @@ class TrajectoryBehaviorClassifier:
                 if feature_dict is None or probs is None:
                     continue
                 label_score = float(probs.get(label_name, 0.0))
-                if label_score > float(best_per_label[label_name]["score"]):
+                best_per_label[label_name]["window_scores"].append(label_score)
+                if label_score > float(best_per_label[label_name]["raw_best_score"]):
                     best_per_label[label_name] = {
                         "score": label_score,
+                        "raw_best_score": label_score,
                         "feature_dict": feature_dict,
                         "window_size": int(window_size),
+                        "window_scores": list(best_per_label[label_name].get("window_scores", [])),
                     }
+
+            best_per_label[label_name]["score"] = self._aggregate_window_scores(
+                list(best_per_label[label_name].get("window_scores", []))
+            )
 
         probs = {
             label_name: float(values["score"])

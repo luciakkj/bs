@@ -6,7 +6,12 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
+from torchvision.models import (
+    MobileNet_V3_Small_Weights,
+    ResNet50_Weights,
+    mobilenet_v3_small,
+    resnet50,
+)
 
 
 class ReIDFeatureExtractor:
@@ -18,6 +23,7 @@ class ReIDFeatureExtractor:
         device: str | None = None,
         weights_path: str | None = None,
         input_size: tuple[int, int] = (256, 128),
+        flip_aug: bool = False,
     ) -> None:
         self.model_name = str(model_name or "mobilenet_v3_small").lower()
         self.device = self._resolve_device(device)
@@ -26,6 +32,7 @@ class ReIDFeatureExtractor:
             max(32, int(input_size[0])),
             max(16, int(input_size[1])),
         )
+        self.flip_aug = bool(flip_aug)
         self.model = self._load_model()
         self.mean = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
         self.std = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
@@ -47,19 +54,39 @@ class ReIDFeatureExtractor:
         if cached is not None:
             return cached
 
-        if self.model_name != "mobilenet_v3_small":
+        if self.model_name == "mobilenet_v3_small":
+            if self.weights_path:
+                model = mobilenet_v3_small(weights=None)
+                state_dict = torch.load(self.weights_path, map_location="cpu")
+                if isinstance(state_dict, dict) and "state_dict" in state_dict:
+                    state_dict = state_dict["state_dict"]
+                model.load_state_dict(state_dict, strict=False)
+            else:
+                model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT)
+            backbone = torch.nn.Sequential(model.features, model.avgpool)
+        elif self.model_name == "resnet50":
+            if self.weights_path:
+                model = resnet50(weights=None)
+                state_dict = torch.load(self.weights_path, map_location="cpu")
+                if isinstance(state_dict, dict) and "state_dict" in state_dict:
+                    state_dict = state_dict["state_dict"]
+                model.load_state_dict(state_dict, strict=False)
+            else:
+                model = resnet50(weights=ResNet50_Weights.DEFAULT)
+            backbone = torch.nn.Sequential(
+                model.conv1,
+                model.bn1,
+                model.relu,
+                model.maxpool,
+                model.layer1,
+                model.layer2,
+                model.layer3,
+                model.layer4,
+                model.avgpool,
+            )
+        else:
             raise ValueError(f"Unsupported ReID model: {self.model_name}")
 
-        if self.weights_path:
-            model = mobilenet_v3_small(weights=None)
-            state_dict = torch.load(self.weights_path, map_location="cpu")
-            if isinstance(state_dict, dict) and "state_dict" in state_dict:
-                state_dict = state_dict["state_dict"]
-            model.load_state_dict(state_dict, strict=False)
-        else:
-            model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT)
-
-        backbone = torch.nn.Sequential(model.features, model.avgpool)
         backbone.eval()
         backbone.to(self.device)
         self._MODEL_CACHE[cache_key] = backbone
@@ -71,14 +98,18 @@ class ReIDFeatureExtractor:
 
         resized = cv2.resize(crop, (self.input_size[1], self.input_size[0]), interpolation=cv2.INTER_LINEAR)
         rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-        normalized = (rgb - self.mean) / self.std
-        tensor = torch.from_numpy(normalized.transpose(2, 0, 1)).unsqueeze(0).to(self.device)
+        variants = [rgb]
+        if self.flip_aug:
+            variants.append(np.ascontiguousarray(rgb[:, ::-1, :]))
+        batch = np.stack([(image - self.mean) / self.std for image in variants], axis=0)
+        tensor = torch.from_numpy(batch.transpose(0, 3, 1, 2)).to(self.device)
 
         with torch.inference_mode():
             features = self.model(tensor)
             if features.ndim > 2:
                 features = torch.flatten(features, 1)
             features = F.normalize(features, p=2, dim=1)
+            features = F.normalize(features.mean(dim=0, keepdim=True), p=2, dim=1)
 
         vector = features.squeeze(0).detach().cpu().numpy().astype(np.float32)
         if vector.size == 0:

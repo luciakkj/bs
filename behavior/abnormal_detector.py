@@ -45,6 +45,11 @@ class AbnormalDetector:
         loitering_support_activate_frames=0,
         loitering_support_block_running=False,
         loitering_context_gate_support_only=False,
+        running_loitering_arb_enabled=False,
+        running_loitering_min_loitering_score=0.72,
+        running_loitering_min_stationary_ratio=0.90,
+        running_loitering_max_movement_extent=50.0,
+        running_loitering_max_p90_speed=3.0,
         loitering_release_frames=1,
         loitering_model_max_avg_speed=2.2,
         loitering_model_min_movement_extent=0.0,
@@ -107,6 +112,11 @@ class AbnormalDetector:
         self.loitering_support_activate_frames = max(self.loitering_activate_frames, support_activate_frames)
         self.loitering_support_block_running = bool(loitering_support_block_running)
         self.loitering_context_gate_support_only = bool(loitering_context_gate_support_only)
+        self.running_loitering_arb_enabled = bool(running_loitering_arb_enabled)
+        self.running_loitering_min_loitering_score = float(running_loitering_min_loitering_score)
+        self.running_loitering_min_stationary_ratio = float(running_loitering_min_stationary_ratio)
+        self.running_loitering_max_movement_extent = float(running_loitering_max_movement_extent)
+        self.running_loitering_max_p90_speed = float(running_loitering_max_p90_speed)
         self.loitering_release_frames = max(1, int(loitering_release_frames))
         self.loitering_model_max_avg_speed = float(loitering_model_max_avg_speed)
         self.loitering_model_min_movement_extent = float(loitering_model_min_movement_extent)
@@ -140,6 +150,7 @@ class AbnormalDetector:
         self.running_active = defaultdict(bool)
         self.track_missing_frames = defaultdict(int)
         self.track_last_frame = {}
+        self.track_last_bbox = {}
         self.display_history_size = 30
         self.frame_index = 0
         self.model_result_cache = {}
@@ -209,6 +220,7 @@ class AbnormalDetector:
             self.model_result_cache,
             self.track_missing_frames,
             self.track_last_frame,
+            self.track_last_bbox,
         )
         known_track_ids = set()
         for mapping in tracked_maps:
@@ -361,6 +373,16 @@ class AbnormalDetector:
         secondary_weight = 1.0 - primary_weight
         return primary_score * primary_weight + secondary_score * secondary_weight
 
+    def _should_arbitrate_running_to_loitering(self, loitering_score, loitering_features):
+        if not self.running_loitering_arb_enabled or loitering_features is None:
+            return False
+        return (
+            float(loitering_score) >= self.running_loitering_min_loitering_score
+            and float(loitering_features.get("stationary_ratio", 0.0)) >= self.running_loitering_min_stationary_ratio
+            and float(loitering_features.get("movement_extent", 0.0)) <= self.running_loitering_max_movement_extent
+            and float(loitering_features.get("p90_speed", 0.0)) <= self.running_loitering_max_p90_speed
+        )
+
     def update(self, tracks):
         self.frame_index += 1
         alarms = []
@@ -389,6 +411,7 @@ class AbnormalDetector:
             box = [int(x1), int(y1), int(x2), int(y2)]
             center = self._center(box)
             nearby_track_count = 0
+            self.track_last_bbox[track_id] = tuple(box)
 
             trajectory = self.track_history[track_id]
             prev_center = trajectory[-1] if trajectory else None
@@ -503,6 +526,7 @@ class AbnormalDetector:
                 "ensemble_running_score": 0.0,
                 "model_loitering_support": False,
                 "support_only_loitering": False,
+                "running_loitering_arbitrated": False,
                 "frame_model_enabled": bool(frame_model_enabled),
                 "frame_secondary_model_enabled": bool(frame_secondary_model_enabled),
                 "model_cache_hit": False,
@@ -610,6 +634,8 @@ class AbnormalDetector:
                         "loitering_model_features": loitering_model_features,
                         "running_model_features": running_model_features,
                     }
+                    cache_entry["smoothed_ensemble_loitering_score"] = ensemble_loitering_score
+                    cache_entry["smoothed_ensemble_running_score"] = ensemble_running_score
                     self.model_result_cache[track_id] = cache_entry
                 else:
                     track_infos[track_id]["model_cache_hit"] = True
@@ -628,12 +654,14 @@ class AbnormalDetector:
                 track_infos[track_id]["secondary_model_running_score"] = float(cache_entry.get("secondary_model_running_score", 0.0))
                 track_infos[track_id]["ensemble_loitering_score"] = float(cache_entry.get("ensemble_loitering_score", 0.0))
                 track_infos[track_id]["ensemble_running_score"] = float(cache_entry.get("ensemble_running_score", 0.0))
+                track_infos[track_id]["smoothed_ensemble_loitering_score"] = float(cache_entry.get("smoothed_ensemble_loitering_score", track_infos[track_id]["ensemble_loitering_score"]))
+                track_infos[track_id]["smoothed_ensemble_running_score"] = float(cache_entry.get("smoothed_ensemble_running_score", track_infos[track_id]["ensemble_running_score"]))
 
                 loitering_model_features = cache_entry.get("loitering_model_features")
                 running_model_features = cache_entry.get("running_model_features")
                 model_loitering_support = (
                     self._passes_loitering_model_gate(
-                        track_infos[track_id]["ensemble_loitering_score"],
+                        track_infos[track_id]["smoothed_ensemble_loitering_score"],
                         loitering_model_features,
                         score_threshold=self.loitering_model_support_thresh,
                     )
@@ -646,12 +674,20 @@ class AbnormalDetector:
                     else self._passes_loitering_context_gate(nearby_track_count)
                 )
                 if self._passes_loitering_model_gate(
-                    track_infos[track_id]["ensemble_loitering_score"],
+                    track_infos[track_id]["smoothed_ensemble_loitering_score"],
                     loitering_model_features,
                 ) and model_context_gate_ok:
                     model_loitering_now = True
-                if self._passes_running_model_gate(track_infos[track_id]["ensemble_running_score"], running_model_features):
+                if self._passes_running_model_gate(track_infos[track_id]["smoothed_ensemble_running_score"], running_model_features):
                     model_running_now = True
+
+                if model_running_now and self._should_arbitrate_running_to_loitering(
+                    track_infos[track_id]["smoothed_ensemble_loitering_score"],
+                    loitering_model_features,
+                ):
+                    model_loitering_now = True
+                    model_running_now = False
+                    track_infos[track_id]["running_loitering_arbitrated"] = True
 
             loitering_now = False
             support_only_loitering_now = False

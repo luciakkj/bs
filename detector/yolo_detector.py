@@ -12,6 +12,7 @@ class YOLODetector:
         device=None,
         imgsz=None,
         max_det=None,
+        nms_iou=None,
         half=False,
         augment=False,
     ):
@@ -21,12 +22,13 @@ class YOLODetector:
         self.device = device
         self.imgsz = int(imgsz) if imgsz else None
         self.max_det = int(max_det) if max_det else None
+        self.nms_iou = float(nms_iou) if nms_iou is not None else None
         self.half = bool(half)
         self.augment = bool(augment)
 
-    def detect(self, frame):
+    def _build_predict_kwargs(self, conf):
         predict_kwargs = {
-            "conf": self.conf,
+            "conf": conf,
             "classes": self.classes,
             "device": self.device,
             "verbose": False,
@@ -35,14 +37,18 @@ class YOLODetector:
             predict_kwargs["imgsz"] = self.imgsz
         if self.max_det:
             predict_kwargs["max_det"] = self.max_det
+        if self.nms_iou is not None:
+            predict_kwargs["iou"] = self.nms_iou
         if self.half:
             predict_kwargs["half"] = self.half
         if self.augment:
             predict_kwargs["augment"] = self.augment
+        return predict_kwargs
 
+    def _predict(self, frame, conf):
         results = self.model.predict(
             frame,
-            **predict_kwargs,
+            **self._build_predict_kwargs(conf),
         )[0]
 
         detections = []
@@ -55,5 +61,7 @@ class YOLODetector:
         for box, score in zip(xyxy, confs):
             x1, y1, x2, y2 = map(int, box[:4])
             detections.append([x1, y1, x2, y2, float(score)])
-
         return detections
+
+    def detect(self, frame):
+        return self._predict(frame, self.conf)

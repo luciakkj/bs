@@ -62,17 +62,29 @@ def linear_assignment(cost_matrix, thresh):
     if cost_matrix.size == 0:
         return [], tuple(range(cost_matrix.shape[0])), tuple(range(cost_matrix.shape[1]))
 
-    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    finite_mask = np.isfinite(cost_matrix)
+    valid_rows = np.where(finite_mask.any(axis=1))[0]
+    valid_cols = np.where(finite_mask.any(axis=0))[0]
+    if valid_rows.size == 0 or valid_cols.size == 0:
+        return [], tuple(range(cost_matrix.shape[0])), tuple(range(cost_matrix.shape[1]))
+
+    reduced = cost_matrix[np.ix_(valid_rows, valid_cols)].copy()
+    large_cost = float(max(thresh + 1.0, 1e6))
+    reduced[~np.isfinite(reduced)] = large_cost
+
+    row_ind, col_ind = linear_sum_assignment(reduced)
     matches = []
     matched_rows = set()
     matched_cols = set()
 
     for row, col in zip(row_ind, col_ind):
-        if cost_matrix[row, col] > thresh:
+        original_row = int(valid_rows[row])
+        original_col = int(valid_cols[col])
+        if cost_matrix[original_row, original_col] > thresh or not np.isfinite(cost_matrix[original_row, original_col]):
             continue
-        matches.append((row, col))
-        matched_rows.add(row)
-        matched_cols.add(col)
+        matches.append((original_row, original_col))
+        matched_rows.add(original_row)
+        matched_cols.add(original_col)
 
     unmatched_rows = tuple(idx for idx in range(cost_matrix.shape[0]) if idx not in matched_rows)
     unmatched_cols = tuple(idx for idx in range(cost_matrix.shape[1]) if idx not in matched_cols)
@@ -178,13 +190,13 @@ class STrack:
     def end_frame(self):
         return self.frame_id
 
-    def activate(self, kalman_filter, frame_id):
+    def activate(self, kalman_filter, frame_id, activated=True):
         self.kalman_filter = kalman_filter
         self.track_id = self.next_id()
         self.mean, self.covariance = self.kalman_filter.initiate(self.to_xyah())
         self.tracklet_len = 0
         self.state = TrackState.Tracked
-        self.is_activated = True
+        self.is_activated = bool(activated)
         self.frame_id = frame_id
         self.start_frame = frame_id
 
@@ -279,6 +291,7 @@ class ByteTrackerLite:
         track_high_thresh=0.5,
         track_low_thresh=0.1,
         new_track_thresh=0.6,
+        new_track_confirm_frames=1,
         match_thresh=0.8,
         low_match_thresh=0.5,
         unconfirmed_match_thresh=0.7,
@@ -288,6 +301,7 @@ class ByteTrackerLite:
         appearance_enabled=False,
         appearance_weight=0.25,
         appearance_ambiguity_margin=0.05,
+        appearance_all_valid=False,
         appearance_feature_mode="hsv",
         appearance_hist_bins=(8, 4, 4),
         appearance_min_box_size=16,
@@ -295,10 +309,25 @@ class ByteTrackerLite:
         appearance_reid_weights="",
         appearance_reid_device="",
         appearance_reid_input_size=(256, 128),
+        appearance_reid_flip_aug=False,
+        track_stability_weight=0.0,
+        motion_gate_enabled=False,
+        motion_gate_thresh=9.4877,
+        crowd_boost_enabled=False,
+        crowd_boost_det_count=12,
+        crowd_match_thresh=None,
+        crowd_low_match_thresh=None,
+        crowd_new_track_confirm_frames=None,
+        crowd_appearance_weight=None,
+        crowd_track_stability_weight=None,
+        crowd_boost_min_small_ratio=None,
+        crowd_boost_max_median_area_ratio=None,
+        crowd_boost_small_area_ratio_thresh=0.002,
     ):
         self.track_high_thresh = float(track_high_thresh)
         self.track_low_thresh = float(track_low_thresh)
         self.new_track_thresh = float(new_track_thresh)
+        self.new_track_confirm_frames = max(1, int(new_track_confirm_frames))
         self.match_thresh = float(match_thresh)
         self.low_match_thresh = float(low_match_thresh)
         self.unconfirmed_match_thresh = float(unconfirmed_match_thresh)
@@ -308,6 +337,7 @@ class ByteTrackerLite:
         self.appearance_enabled = bool(appearance_enabled)
         self.appearance_weight = float(np.clip(appearance_weight, 0.0, 1.0))
         self.appearance_ambiguity_margin = float(max(0.0, appearance_ambiguity_margin))
+        self.appearance_all_valid = bool(appearance_all_valid)
         self.appearance_feature_mode = str(appearance_feature_mode or "hsv").lower()
         bins = tuple(int(value) for value in appearance_hist_bins)
         self.appearance_hist_bins = bins if len(bins) == 3 else (8, 4, 4)
@@ -317,6 +347,54 @@ class ByteTrackerLite:
         self.appearance_reid_model = str(appearance_reid_model or "mobilenet_v3_small")
         self.appearance_reid_weights = str(appearance_reid_weights or "")
         self.appearance_reid_device = str(appearance_reid_device or "")
+        self.appearance_reid_flip_aug = bool(appearance_reid_flip_aug)
+        self.track_stability_weight = float(np.clip(track_stability_weight, 0.0, 0.2))
+        self.motion_gate_enabled = bool(motion_gate_enabled)
+        self.motion_gate_thresh = float(max(0.0, motion_gate_thresh))
+        self.crowd_boost_enabled = bool(crowd_boost_enabled)
+        self.crowd_boost_det_count = max(1, int(crowd_boost_det_count))
+        self.crowd_match_thresh = (
+            float(crowd_match_thresh)
+            if crowd_match_thresh is not None
+            else float(self.match_thresh)
+        )
+        self.crowd_low_match_thresh = (
+            float(crowd_low_match_thresh)
+            if crowd_low_match_thresh is not None
+            else float(self.low_match_thresh)
+        )
+        self.crowd_new_track_confirm_frames = (
+            max(1, int(crowd_new_track_confirm_frames))
+            if crowd_new_track_confirm_frames is not None
+            else self.new_track_confirm_frames
+        )
+        self.crowd_appearance_weight = float(
+            np.clip(
+                self.appearance_weight if crowd_appearance_weight is None else crowd_appearance_weight,
+                0.0,
+                1.0,
+            )
+        )
+        self.crowd_track_stability_weight = float(
+            np.clip(
+                self.track_stability_weight
+                if crowd_track_stability_weight is None
+                else crowd_track_stability_weight,
+                0.0,
+                0.2,
+            )
+        )
+        self.crowd_boost_min_small_ratio = (
+            float(crowd_boost_min_small_ratio)
+            if crowd_boost_min_small_ratio is not None
+            else None
+        )
+        self.crowd_boost_max_median_area_ratio = (
+            float(crowd_boost_max_median_area_ratio)
+            if crowd_boost_max_median_area_ratio is not None
+            else None
+        )
+        self.crowd_boost_small_area_ratio_thresh = float(max(1e-6, crowd_boost_small_area_ratio_thresh))
         self.reid_encoder = None
 
         self.kalman_filter = KalmanFilterXYAH()
@@ -359,6 +437,7 @@ class ByteTrackerLite:
                 device=self.appearance_reid_device,
                 weights_path=self.appearance_reid_weights,
                 input_size=self.appearance_reid_input_size,
+                flip_aug=self.appearance_reid_flip_aug,
             )
         return self.reid_encoder
 
@@ -389,6 +468,14 @@ class ByteTrackerLite:
             score = float(np.dot(track_feature, detection_feature))
             return float(np.clip(score, 0.0, 1.0))
         return float(np.minimum(track_feature, detection_feature).sum())
+
+    def _track_stability_score(self, track):
+        age = max(int(track.tracklet_len), int(track.frame_id - track.start_frame + 1), 1)
+        stability = float(np.log1p(age) / np.log1p(30.0))
+        stability = float(np.clip(stability, 0.0, 1.0))
+        if track.state == TrackState.Lost:
+            stability *= 0.5
+        return stability
 
     def _ensure_detection_features(self, detections, frame, indices):
         if not self.appearance_enabled or frame is None:
@@ -429,7 +516,16 @@ class ByteTrackerLite:
 
         return ambiguous_rows, ambiguous_cols
 
-    def _apply_appearance_association(self, cost_matrix, tracks, detections, frame, thresh):
+    def _apply_appearance_association(
+        self,
+        cost_matrix,
+        tracks,
+        detections,
+        frame,
+        thresh,
+        appearance_weight,
+        track_stability_weight,
+    ):
         if (
             not self.appearance_enabled
             or frame is None
@@ -439,13 +535,18 @@ class ByteTrackerLite:
         ):
             return cost_matrix
 
-        ambiguous_rows, ambiguous_cols = self._collect_ambiguous_pairs(cost_matrix, thresh)
-        if not ambiguous_rows and not ambiguous_cols:
-            return cost_matrix
-
-        target_rows = set(ambiguous_rows)
-        target_cols = set(ambiguous_cols)
         valid_mask = np.isfinite(cost_matrix) & (cost_matrix <= thresh)
+        if self.appearance_all_valid:
+            target_rows = set(np.where(valid_mask.any(axis=1))[0].tolist())
+            target_cols = set(np.where(valid_mask.any(axis=0))[0].tolist())
+            ambiguous_rows: set[int] = set()
+            ambiguous_cols: set[int] = set()
+        else:
+            ambiguous_rows, ambiguous_cols = self._collect_ambiguous_pairs(cost_matrix, thresh)
+            if not ambiguous_rows and not ambiguous_cols:
+                return cost_matrix
+            target_rows = set(ambiguous_rows)
+            target_cols = set(ambiguous_cols)
 
         if ambiguous_cols:
             for col_idx in ambiguous_cols:
@@ -455,7 +556,7 @@ class ByteTrackerLite:
             for row_idx in ambiguous_rows:
                 target_cols.update(np.where(valid_mask[row_idx])[0].tolist())
 
-        if self.appearance_enabled and self.appearance_weight > 0.0:
+        if self.appearance_enabled and appearance_weight > 0.0:
             self._ensure_detection_features(detections, frame, sorted(target_cols))
         adjusted = cost_matrix.copy()
 
@@ -470,26 +571,105 @@ class ByteTrackerLite:
                 spatial_similarity = 1.0 - float(cost_matrix[row_idx, col_idx])
                 fused_similarity = spatial_similarity
 
-                appearance_weight = 0.0
-                if self.appearance_enabled and self.appearance_weight > 0.0:
+                effective_appearance_weight = 0.0
+                if self.appearance_enabled and appearance_weight > 0.0:
                     detection_feature = detections[col_idx].feature
                     if detection_feature is not None and track_feature is not None:
-                        appearance_weight = self.appearance_weight
+                        effective_appearance_weight = appearance_weight
                         appearance_similarity = self._appearance_similarity(track_feature, detection_feature)
                         fused_similarity = (
-                            (1.0 - appearance_weight) * fused_similarity
-                            + appearance_weight * appearance_similarity
+                            (1.0 - effective_appearance_weight) * fused_similarity
+                            + effective_appearance_weight * appearance_similarity
                         )
+
+                if track_stability_weight > 0.0:
+                    stability_bonus = track_stability_weight * self._track_stability_score(tracks[row_idx])
+                    fused_similarity = min(1.0, fused_similarity + stability_bonus * spatial_similarity)
 
                 adjusted[row_idx, col_idx] = 1.0 - fused_similarity
 
         return adjusted
+
+    def _is_crowd_boost_frame(self, detections, frame):
+        total_candidate_detections = int(len(detections))
+        if not self.crowd_boost_enabled or total_candidate_detections < self.crowd_boost_det_count:
+            return False
+        if frame is None:
+            return True
+        if (
+            self.crowd_boost_min_small_ratio is None
+            and self.crowd_boost_max_median_area_ratio is None
+        ):
+            return True
+
+        frame_height, frame_width = frame.shape[:2]
+        frame_area = max(1.0, float(frame_height * frame_width))
+        area_ratios = []
+        for detection in detections:
+            tlwh = getattr(detection, "tlwh", None)
+            if tlwh is None:
+                continue
+            width = max(1.0, float(tlwh[2]))
+            height = max(1.0, float(tlwh[3]))
+            area_ratios.append((width * height) / frame_area)
+        if not area_ratios:
+            return False
+
+        area_ratios = np.asarray(area_ratios, dtype=np.float32)
+        small_ratio = float(np.mean(area_ratios <= self.crowd_boost_small_area_ratio_thresh))
+        median_area_ratio = float(np.median(area_ratios))
+        if self.crowd_boost_min_small_ratio is not None and small_ratio < self.crowd_boost_min_small_ratio:
+            return False
+        if (
+            self.crowd_boost_max_median_area_ratio is not None
+            and median_area_ratio > self.crowd_boost_max_median_area_ratio
+        ):
+            return False
+        return True
+
+    def _resolve_frame_params(self, detections, frame):
+        if not self._is_crowd_boost_frame(detections, frame):
+            return {
+                "match_thresh": self.match_thresh,
+                "low_match_thresh": self.low_match_thresh,
+                "new_track_confirm_frames": self.new_track_confirm_frames,
+                "appearance_weight": self.appearance_weight,
+                "track_stability_weight": self.track_stability_weight,
+            }
+        return {
+            "match_thresh": self.crowd_match_thresh,
+            "low_match_thresh": self.crowd_low_match_thresh,
+            "new_track_confirm_frames": self.crowd_new_track_confirm_frames,
+            "appearance_weight": self.crowd_appearance_weight,
+            "track_stability_weight": self.crowd_track_stability_weight,
+        }
 
     def _make_track_from_detection(self, detection):
         det_track = STrack(detection.tlwh, detection.score)
         det_track.kalman_filter = self.kalman_filter
         det_track._update_feature(detection.feature, momentum=0.0)
         return det_track
+
+    def _apply_motion_gate(self, cost_matrix, tracks, detections):
+        if (
+            not self.motion_gate_enabled
+            or cost_matrix.size == 0
+            or not tracks
+            or not detections
+        ):
+            return cost_matrix
+
+        adjusted = cost_matrix.copy()
+        measurements = np.asarray(
+            [self._make_track_from_detection(det).to_xyah() for det in detections],
+            dtype=np.float32,
+        )
+        for row_idx, track in enumerate(tracks):
+            if track.mean is None or track.covariance is None:
+                continue
+            gating_distances = self.kalman_filter.gating_distance(track.mean, track.covariance, measurements)
+            adjusted[row_idx, gating_distances > self.motion_gate_thresh] = np.inf
+        return adjusted
 
     def update(self, detections, frame=None):
         self.frame_id += 1
@@ -506,6 +686,11 @@ class ByteTrackerLite:
         low_score_detections = [
             det for det in detections if self.track_low_thresh <= det.score < self.track_high_thresh
         ]
+        frame_params = self._resolve_frame_params(high_score_detections + low_score_detections, frame)
+        match_thresh = float(frame_params["match_thresh"])
+        low_match_thresh = float(frame_params["low_match_thresh"])
+        appearance_weight = float(frame_params["appearance_weight"])
+        track_stability_weight = float(frame_params["track_stability_weight"])
 
         tracked_stracks = []
         unconfirmed = []
@@ -519,15 +704,18 @@ class ByteTrackerLite:
         STrack.multi_predict(strack_pool)
 
         dists = iou_distance(strack_pool, high_score_detections)
+        dists = self._apply_motion_gate(dists, strack_pool, high_score_detections)
         dists = fuse_detection_scores(dists, high_score_detections, self.score_fusion_weight)
         dists = self._apply_appearance_association(
             dists,
             strack_pool,
             high_score_detections,
             frame,
-            self.match_thresh,
+            match_thresh,
+            appearance_weight,
+            track_stability_weight,
         )
-        matches, u_track, u_detection = linear_assignment(dists, thresh=self.match_thresh)
+        matches, u_track, u_detection = linear_assignment(dists, thresh=match_thresh)
 
         for track_idx, det_idx in matches:
             track = strack_pool[track_idx]
@@ -546,14 +734,17 @@ class ByteTrackerLite:
             if strack_pool[idx].state == TrackState.Tracked
         ]
         dists_low = iou_distance(remaining_tracked, low_score_detections)
+        dists_low = self._apply_motion_gate(dists_low, remaining_tracked, low_score_detections)
         dists_low = self._apply_appearance_association(
             dists_low,
             remaining_tracked,
             low_score_detections,
             frame,
-            self.low_match_thresh,
+            low_match_thresh,
+            appearance_weight,
+            track_stability_weight,
         )
-        matches_low, u_track_low, u_low_detection = linear_assignment(dists_low, thresh=self.low_match_thresh)
+        matches_low, u_track_low, u_low_detection = linear_assignment(dists_low, thresh=low_match_thresh)
 
         for track_idx, det_idx in matches_low:
             track = remaining_tracked[track_idx]
@@ -568,6 +759,7 @@ class ByteTrackerLite:
 
         unmatched_high = [high_score_detections[idx] for idx in u_detection]
         dists_unc = iou_distance(unconfirmed, unmatched_high)
+        dists_unc = self._apply_motion_gate(dists_unc, unconfirmed, unmatched_high)
         dists_unc = fuse_detection_scores(dists_unc, unmatched_high, self.score_fusion_weight)
         dists_unc = self._apply_appearance_association(
             dists_unc,
@@ -575,6 +767,8 @@ class ByteTrackerLite:
             unmatched_high,
             frame,
             self.unconfirmed_match_thresh,
+            appearance_weight,
+            track_stability_weight,
         )
         matches_unc, u_unconfirmed, u_detection = linear_assignment(
             dists_unc,
@@ -598,8 +792,12 @@ class ByteTrackerLite:
                 continue
 
             track = self._make_track_from_detection(det)
-            track.activate(self.kalman_filter, self.frame_id)
-            activated_stracks.append(track)
+            if self.new_track_confirm_frames <= 1:
+                track.activate(self.kalman_filter, self.frame_id, activated=True)
+                activated_stracks.append(track)
+            else:
+                track.activate(self.kalman_filter, self.frame_id, activated=False)
+                tentative_stracks.append(track)
 
         for track in self.lost_stracks:
             if self.frame_id - track.end_frame > self.max_time_lost:
@@ -610,6 +808,7 @@ class ByteTrackerLite:
             track for track in self.tracked_stracks
             if track.state == TrackState.Tracked
         ]
+        self.tracked_stracks = joint_stracks(self.tracked_stracks, tentative_stracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, activated_stracks)
         self.tracked_stracks = joint_stracks(self.tracked_stracks, refind_stracks)
 

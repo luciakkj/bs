@@ -5,17 +5,21 @@ import json
 
 from training.avenue_pseudo_labels import generate_avenue_pseudo_labels
 from training.avenue_validation import validate_on_avenue
+from training.ubnormal_validation import validate_on_ubnormal
 from training.avenue_behavior_windows import build_avenue_behavior_windows
 from training.behavior_calibration import calibrate_behavior_thresholds
 from training.behavior_classifier import train_behavior_classifier
 from training.behavior_dataset_expansion import expand_behavior_dataset
 from training.behavior_hard_negative_mining import mine_behavior_hard_negatives
+from training.behavior_model_eval import evaluate_behavior_model
 from training.behavior_window_reconstruction import reconstruct_behavior_windows
 from training.mot_tracking_eval import evaluate_mot_tracking
 from training.config import (
     AvenueBehaviorWindowConfig,
     AvenuePseudoLabelConfig,
     AvenueValidationConfig,
+    BehaviorModelEvalConfig,
+    UBnormalValidationConfig,
     BehaviorClassifierTrainConfig,
     CalibrationConfig,
     MOTTrackingEvalConfig,
@@ -42,6 +46,17 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--val-ratio", type=float, default=0.25)
     prepare.add_argument("--val-sequences", nargs="*", default=[])
     prepare.add_argument("--overwrite", action="store_true")
+    prepare.add_argument("--dense-small-repeat-factor", type=int, default=1)
+    prepare.add_argument("--dense-small-max-repeat-frames", type=int, default=None)
+    prepare.add_argument("--dense-small-min-gt-count", type=int, default=12)
+    prepare.add_argument("--dense-small-min-small-ratio", type=float, default=0.7)
+    prepare.add_argument("--dense-small-max-median-area-ratio", type=float, default=0.002)
+    prepare.add_argument("--small-box-area-ratio-thresh", type=float, default=0.002)
+    prepare.add_argument("--dense-small-crop-enable", action=argparse.BooleanOptionalAction, default=False)
+    prepare.add_argument("--dense-small-crop-max-frames", type=int, default=None)
+    prepare.add_argument("--dense-small-crop-width-ratio", type=float, default=0.5)
+    prepare.add_argument("--dense-small-crop-height-ratio", type=float, default=0.5)
+    prepare.add_argument("--dense-small-crop-min-boxes", type=int, default=6)
 
     calibrate = subparsers.add_parser("calibrate", help="Estimate behavior thresholds from MOT17 trajectories.")
     calibrate.add_argument("--mot-root", default="data/MOT17")
@@ -82,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     tracking_eval.add_argument("--split-name", default="train")
     tracking_eval.add_argument("--detector", default="FRCNN")
     tracking_eval.add_argument("--sequence-names", nargs="*", default=[])
+    tracking_eval.add_argument("--sequence-runtime-overrides-path", default=None)
     tracking_eval.add_argument("--include-classes", nargs="*", type=int, default=[1])
     tracking_eval.add_argument("--min-visibility", type=float, default=0.0)
     tracking_eval.add_argument("--min-iou", type=float, default=0.5)
@@ -95,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     tracking_eval.add_argument("--device", default=None)
     tracking_eval.add_argument("--imgsz", type=int, default=None)
     tracking_eval.add_argument("--max-det", type=int, default=None)
+    tracking_eval.add_argument("--nms-iou", type=float, default=None)
     tracking_eval.add_argument("--half", action=argparse.BooleanOptionalAction, default=None)
     tracking_eval.add_argument("--augment", action=argparse.BooleanOptionalAction, default=None)
     tracking_eval.add_argument("--predict-conf", type=float, default=None)
@@ -117,6 +134,18 @@ def build_parser() -> argparse.ArgumentParser:
     tracking_eval.add_argument("--appearance-reid-weights", default=None)
     tracking_eval.add_argument("--appearance-reid-device", default=None)
     tracking_eval.add_argument("--appearance-reid-input-size", nargs=2, type=int, default=None)
+    tracking_eval.add_argument("--appearance-reid-flip-aug", action=argparse.BooleanOptionalAction, default=None)
+    tracking_eval.add_argument("--appearance-all-valid", action=argparse.BooleanOptionalAction, default=None)
+    tracking_eval.add_argument("--motion-gate-enabled", action=argparse.BooleanOptionalAction, default=None)
+    tracking_eval.add_argument("--motion-gate-thresh", type=float, default=None)
+    tracking_eval.add_argument("--crowd-boost-enabled", action=argparse.BooleanOptionalAction, default=None)
+    tracking_eval.add_argument("--crowd-boost-det-count", type=int, default=None)
+    tracking_eval.add_argument("--crowd-match-thresh", type=float, default=None)
+    tracking_eval.add_argument("--crowd-low-match-thresh", type=float, default=None)
+    tracking_eval.add_argument("--crowd-appearance-weight", type=float, default=None)
+    tracking_eval.add_argument("--crowd-boost-min-small-ratio", type=float, default=None)
+    tracking_eval.add_argument("--crowd-boost-max-median-area-ratio", type=float, default=None)
+    tracking_eval.add_argument("--crowd-boost-small-area-ratio-thresh", type=float, default=None)
 
     avenue = subparsers.add_parser("validate-avenue", help="Run anomaly validation on CUHK Avenue using detection, tracking, and rule-based behavior analysis.")
     avenue.add_argument("--avenue-root", default="data/CUHK_Avenue/Avenue Dataset")
@@ -174,6 +203,11 @@ def build_parser() -> argparse.ArgumentParser:
     avenue.add_argument("--loitering-support-activate-frames", type=int, default=0)
     avenue.add_argument("--loitering-support-block-running", action="store_true")
     avenue.add_argument("--loitering-context-gate-support-only", action=argparse.BooleanOptionalAction, default=False)
+    avenue.add_argument("--running-loitering-arb-enabled", action=argparse.BooleanOptionalAction, default=False)
+    avenue.add_argument("--running-loitering-min-loitering-score", type=float, default=0.72)
+    avenue.add_argument("--running-loitering-min-stationary-ratio", type=float, default=0.90)
+    avenue.add_argument("--running-loitering-max-movement-extent", type=float, default=50.0)
+    avenue.add_argument("--running-loitering-max-p90-speed", type=float, default=3.0)
     avenue.add_argument("--loitering-release-frames", type=int, default=1)
     avenue.add_argument("--loitering-model-max-avg-speed", type=float, default=2.2)
     avenue.add_argument("--loitering-model-min-movement-extent", type=float, default=0.0)
@@ -209,6 +243,18 @@ def build_parser() -> argparse.ArgumentParser:
     avenue.add_argument("--sequence-ids", nargs="*", default=[])
     avenue.add_argument("--save-demo-frames", action="store_true")
     avenue.add_argument("--demo-dir", default="output/avenue/demo")
+
+    ubnormal = subparsers.add_parser(
+        "validate-ubnormal",
+        help="Run anomaly validation on UBnormal using the current project config.",
+    )
+    ubnormal.add_argument("--manifest-path", default="data/processed/ubnormal_official/manifests/test.jsonl")
+    ubnormal.add_argument("--config-path", default="config.yaml")
+    ubnormal.add_argument("--output-path", default="output/ubnormal/validation_report.json")
+    ubnormal.add_argument("--max-videos", type=int, default=None)
+    ubnormal.add_argument("--sequence-ids", nargs="*", default=[])
+    ubnormal.add_argument("--save-demo-frames", action="store_true")
+    ubnormal.add_argument("--demo-dir", default="output/ubnormal/demo")
 
     pseudo = subparsers.add_parser(
         "generate-avenue-pseudo-labels",
@@ -265,6 +311,41 @@ def build_parser() -> argparse.ArgumentParser:
     behavior_train.add_argument("--hidden-dims", nargs="+", type=int, default=[32, 16])
     behavior_train.add_argument("--dropout", type=float, default=0.1)
     behavior_train.add_argument("--patience", type=int, default=25)
+
+    behavior_eval = subparsers.add_parser(
+        "eval-behavior-model",
+        help="Evaluate a behavior classifier checkpoint on a track JSONL dataset.",
+    )
+    behavior_eval.add_argument("--checkpoint-path", required=True)
+    behavior_eval.add_argument("--dataset-path", required=True)
+    behavior_eval.add_argument("--output-path", default="output/behavior_eval/report.json")
+    behavior_eval.add_argument("--device", default="")
+    behavior_eval.add_argument("--loitering-min-score", type=float, default=0.595)
+    behavior_eval.add_argument("--running-min-score", type=float, default=None)
+    behavior_eval.add_argument("--running-loitering-arb-enabled", action=argparse.BooleanOptionalAction, default=True)
+    behavior_eval.add_argument("--running-loitering-min-loitering-score", type=float, default=0.695)
+    behavior_eval.add_argument("--running-loitering-min-stationary-ratio", type=float, default=0.88)
+    behavior_eval.add_argument("--running-loitering-max-movement-extent", type=float, default=55.0)
+    behavior_eval.add_argument("--running-loitering-max-p90-speed", type=float, default=3.0)
+    behavior_eval.add_argument("--loitering-borderline-gate-enabled", action=argparse.BooleanOptionalAction, default=True)
+    behavior_eval.add_argument("--loitering-borderline-gate-max-score", type=float, default=0.76)
+    behavior_eval.add_argument("--loitering-borderline-gate-min-stationary-ratio", type=float, default=0.70)
+    behavior_eval.add_argument("--loitering-borderline-gate-max-movement-extent", type=float, default=70.0)
+    behavior_eval.add_argument("--loitering-borderline-gate-max-p90-speed", type=float, default=4.0)
+    behavior_eval.add_argument("--loitering-borderline-gate-min-revisit-ratio", type=float, default=0.88)
+    behavior_eval.add_argument("--running-borderline-gate-enabled", action=argparse.BooleanOptionalAction, default=True)
+    behavior_eval.add_argument("--running-borderline-gate-max-score", type=float, default=0.75)
+    behavior_eval.add_argument("--running-borderline-gate-min-stationary-ratio", type=float, default=0.80)
+    behavior_eval.add_argument("--running-borderline-gate-max-movement-extent", type=float, default=20.0)
+    behavior_eval.add_argument("--running-borderline-gate-max-p90-speed", type=float, default=2.0)
+    behavior_eval.add_argument("--quality-adaptive-loitering-enabled", action=argparse.BooleanOptionalAction, default=True)
+    behavior_eval.add_argument("--quality-adaptive-loitering-long-track-frames", type=float, default=90.0)
+    behavior_eval.add_argument("--quality-adaptive-loitering-long-track-max-score", type=float, default=0.82)
+    behavior_eval.add_argument("--quality-adaptive-loitering-long-track-min-revisit-ratio", type=float, default=0.88)
+    behavior_eval.add_argument("--source-aware-running-gate-enabled", action=argparse.BooleanOptionalAction, default=False)
+    behavior_eval.add_argument("--source-aware-rswacv-running-max-score", type=float, default=0.68)
+    behavior_eval.add_argument("--source-aware-rswacv-running-max-movement-extent", type=float, default=10.0)
+    behavior_eval.add_argument("--source-aware-rswacv-running-max-p90-speed", type=float, default=1.5)
 
     behavior_expand = subparsers.add_parser(
         "expand-behavior-dataset",
@@ -350,7 +431,18 @@ def main() -> None:
                 val_ratio=args.val_ratio,
                 val_sequences=tuple(args.val_sequences),
                 overwrite=args.overwrite,
-            )
+                dense_small_repeat_factor=args.dense_small_repeat_factor,
+                dense_small_max_repeat_frames=args.dense_small_max_repeat_frames,
+            dense_small_min_gt_count=args.dense_small_min_gt_count,
+            dense_small_min_small_ratio=args.dense_small_min_small_ratio,
+            dense_small_max_median_area_ratio=args.dense_small_max_median_area_ratio,
+            small_box_area_ratio_thresh=args.small_box_area_ratio_thresh,
+            dense_small_crop_enable=args.dense_small_crop_enable,
+            dense_small_crop_max_frames=args.dense_small_crop_max_frames,
+            dense_small_crop_width_ratio=args.dense_small_crop_width_ratio,
+            dense_small_crop_height_ratio=args.dense_small_crop_height_ratio,
+            dense_small_crop_min_boxes=args.dense_small_crop_min_boxes,
+        )
         )
         result = converter.prepare()
     elif args.command == "calibrate":
@@ -400,6 +492,7 @@ def main() -> None:
                 split_name=args.split_name,
                 detector_filter=args.detector,
                 sequence_names=tuple(args.sequence_names),
+                sequence_runtime_overrides_path=args.sequence_runtime_overrides_path,
                 include_classes=tuple(args.include_classes),
                 min_visibility=args.min_visibility,
                 min_iou=args.min_iou,
@@ -409,6 +502,7 @@ def main() -> None:
                 device=args.device,
                 imgsz=args.imgsz,
                 max_det=args.max_det,
+                nms_iou=args.nms_iou,
                 half=args.half,
                 augment=args.augment,
                 predict_conf=args.predict_conf,
@@ -431,6 +525,18 @@ def main() -> None:
                 appearance_reid_weights=args.appearance_reid_weights,
                 appearance_reid_device=args.appearance_reid_device,
                 appearance_reid_input_size=tuple(args.appearance_reid_input_size) if args.appearance_reid_input_size is not None else None,
+                appearance_reid_flip_aug=args.appearance_reid_flip_aug,
+                appearance_all_valid=args.appearance_all_valid,
+                motion_gate_enabled=args.motion_gate_enabled,
+                motion_gate_thresh=args.motion_gate_thresh,
+                crowd_boost_enabled=args.crowd_boost_enabled,
+                crowd_boost_det_count=args.crowd_boost_det_count,
+                crowd_match_thresh=args.crowd_match_thresh,
+                crowd_low_match_thresh=args.crowd_low_match_thresh,
+                crowd_appearance_weight=args.crowd_appearance_weight,
+                crowd_boost_min_small_ratio=args.crowd_boost_min_small_ratio,
+                crowd_boost_max_median_area_ratio=args.crowd_boost_max_median_area_ratio,
+                crowd_boost_small_area_ratio_thresh=args.crowd_boost_small_area_ratio_thresh,
             )
         )
     elif args.command == "validate-avenue":
@@ -487,6 +593,11 @@ def main() -> None:
                 loitering_support_activate_frames=args.loitering_support_activate_frames,
                 loitering_support_block_running=args.loitering_support_block_running,
                 loitering_context_gate_support_only=args.loitering_context_gate_support_only,
+                running_loitering_arb_enabled=args.running_loitering_arb_enabled,
+                running_loitering_min_loitering_score=args.running_loitering_min_loitering_score,
+                running_loitering_min_stationary_ratio=args.running_loitering_min_stationary_ratio,
+                running_loitering_max_movement_extent=args.running_loitering_max_movement_extent,
+                running_loitering_max_p90_speed=args.running_loitering_max_p90_speed,
                 loitering_release_frames=args.loitering_release_frames,
                 loitering_model_max_avg_speed=args.loitering_model_max_avg_speed,
                 loitering_model_min_movement_extent=args.loitering_model_min_movement_extent,
@@ -518,6 +629,18 @@ def main() -> None:
                 loiter_speed=args.loiter_speed,
                 running_speed=args.running_speed,
                 running_frames=args.running_frames,
+                max_videos=args.max_videos,
+                sequence_ids=tuple(args.sequence_ids),
+                save_demo_frames=args.save_demo_frames,
+                demo_dir=args.demo_dir,
+            )
+        )
+    elif args.command == "validate-ubnormal":
+        result = validate_on_ubnormal(
+            UBnormalValidationConfig(
+                manifest_path=args.manifest_path,
+                config_path=args.config_path,
+                output_path=args.output_path,
                 max_videos=args.max_videos,
                 sequence_ids=tuple(args.sequence_ids),
                 save_demo_frames=args.save_demo_frames,
@@ -578,6 +701,41 @@ def main() -> None:
                 hidden_dims=tuple(args.hidden_dims),
                 dropout=args.dropout,
                 patience=args.patience,
+            )
+        )
+    elif args.command == "eval-behavior-model":
+        result = evaluate_behavior_model(
+            BehaviorModelEvalConfig(
+                checkpoint_path=args.checkpoint_path,
+                dataset_path=args.dataset_path,
+                output_path=args.output_path,
+                device=args.device,
+                loitering_min_score=args.loitering_min_score,
+                running_min_score=args.running_min_score,
+                running_loitering_arb_enabled=args.running_loitering_arb_enabled,
+                running_loitering_min_loitering_score=args.running_loitering_min_loitering_score,
+                running_loitering_min_stationary_ratio=args.running_loitering_min_stationary_ratio,
+                running_loitering_max_movement_extent=args.running_loitering_max_movement_extent,
+                running_loitering_max_p90_speed=args.running_loitering_max_p90_speed,
+                loitering_borderline_gate_enabled=args.loitering_borderline_gate_enabled,
+                loitering_borderline_gate_max_score=args.loitering_borderline_gate_max_score,
+                loitering_borderline_gate_min_stationary_ratio=args.loitering_borderline_gate_min_stationary_ratio,
+                loitering_borderline_gate_max_movement_extent=args.loitering_borderline_gate_max_movement_extent,
+                loitering_borderline_gate_max_p90_speed=args.loitering_borderline_gate_max_p90_speed,
+                loitering_borderline_gate_min_revisit_ratio=args.loitering_borderline_gate_min_revisit_ratio,
+                running_borderline_gate_enabled=args.running_borderline_gate_enabled,
+                running_borderline_gate_max_score=args.running_borderline_gate_max_score,
+                running_borderline_gate_min_stationary_ratio=args.running_borderline_gate_min_stationary_ratio,
+                running_borderline_gate_max_movement_extent=args.running_borderline_gate_max_movement_extent,
+                running_borderline_gate_max_p90_speed=args.running_borderline_gate_max_p90_speed,
+                quality_adaptive_loitering_enabled=args.quality_adaptive_loitering_enabled,
+                quality_adaptive_loitering_long_track_frames=args.quality_adaptive_loitering_long_track_frames,
+                quality_adaptive_loitering_long_track_max_score=args.quality_adaptive_loitering_long_track_max_score,
+                quality_adaptive_loitering_long_track_min_revisit_ratio=args.quality_adaptive_loitering_long_track_min_revisit_ratio,
+                source_aware_running_gate_enabled=args.source_aware_running_gate_enabled,
+                source_aware_rswacv_running_max_score=args.source_aware_rswacv_running_max_score,
+                source_aware_rswacv_running_max_movement_extent=args.source_aware_rswacv_running_max_movement_extent,
+                source_aware_rswacv_running_max_p90_speed=args.source_aware_rswacv_running_max_p90_speed,
             )
         )
     elif args.command == "build-avenue-behavior-windows":

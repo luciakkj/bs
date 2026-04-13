@@ -33,12 +33,21 @@ class VideoAnalyticsPipeline:
                 float(cfg.tracker.track_low_thresh),
             )
         self.detector_predict_conf = float(detector_predict_conf)
+        self.runtime_augment = bool(cfg.model.augment)
+        self.runtime_nms_iou = cfg.model.nms_iou
         self.runtime_track_high_thresh = float(cfg.tracker.track_high_thresh)
         self.runtime_new_track_thresh = float(cfg.tracker.new_track_thresh)
+        self.runtime_match_thresh = float(cfg.tracker.match_thresh)
         if self.runtime_profile == "crowd_recall":
             self.detector_predict_conf = min(self.detector_predict_conf, 0.18)
             self.runtime_track_high_thresh = min(self.runtime_track_high_thresh, 0.42)
             self.runtime_new_track_thresh = min(self.runtime_new_track_thresh, 0.55)
+        elif self.runtime_profile == "tracking_boost":
+            self.runtime_augment = False
+            self.detector_predict_conf = min(self.detector_predict_conf, 0.12)
+            self.runtime_track_high_thresh = min(self.runtime_track_high_thresh, 0.38)
+            self.runtime_new_track_thresh = min(self.runtime_new_track_thresh, 0.48)
+            self.runtime_match_thresh = min(self.runtime_match_thresh, 0.78)
 
         self.detector = YOLODetector(
             cfg.model.model_path,
@@ -47,8 +56,9 @@ class VideoAnalyticsPipeline:
             device=cfg.model.device,
             imgsz=cfg.model.imgsz,
             max_det=cfg.model.max_det,
+            nms_iou=self.runtime_nms_iou,
             half=cfg.model.half,
-            augment=cfg.model.augment,
+            augment=self.runtime_augment,
         )
         self.behavior_classifier = None
         if getattr(cfg.behavior, "behavior_model_path", ""):
@@ -66,7 +76,8 @@ class VideoAnalyticsPipeline:
             track_high_thresh=self.runtime_track_high_thresh,
             track_low_thresh=cfg.tracker.track_low_thresh,
             new_track_thresh=self.runtime_new_track_thresh,
-            match_thresh=cfg.tracker.match_thresh,
+            new_track_confirm_frames=cfg.tracker.new_track_confirm_frames,
+            match_thresh=self.runtime_match_thresh,
             low_match_thresh=cfg.tracker.low_match_thresh,
             unconfirmed_match_thresh=cfg.tracker.unconfirmed_match_thresh,
             score_fusion_weight=cfg.tracker.score_fusion_weight,
@@ -75,6 +86,7 @@ class VideoAnalyticsPipeline:
             appearance_enabled=cfg.tracker.appearance_enabled,
             appearance_weight=cfg.tracker.appearance_weight,
             appearance_ambiguity_margin=cfg.tracker.appearance_ambiguity_margin,
+            appearance_all_valid=cfg.tracker.appearance_all_valid,
             appearance_feature_mode=cfg.tracker.appearance_feature_mode,
             appearance_hist_bins=cfg.tracker.appearance_hist_bins,
             appearance_min_box_size=cfg.tracker.appearance_min_box_size,
@@ -82,6 +94,20 @@ class VideoAnalyticsPipeline:
             appearance_reid_weights=cfg.tracker.appearance_reid_weights,
             appearance_reid_device=cfg.tracker.appearance_reid_device,
             appearance_reid_input_size=cfg.tracker.appearance_reid_input_size,
+            appearance_reid_flip_aug=cfg.tracker.appearance_reid_flip_aug,
+            track_stability_weight=cfg.tracker.track_stability_weight,
+            motion_gate_enabled=cfg.tracker.motion_gate_enabled,
+            motion_gate_thresh=cfg.tracker.motion_gate_thresh,
+            crowd_boost_enabled=cfg.tracker.crowd_boost_enabled,
+            crowd_boost_det_count=cfg.tracker.crowd_boost_det_count,
+            crowd_match_thresh=cfg.tracker.crowd_match_thresh,
+            crowd_low_match_thresh=cfg.tracker.crowd_low_match_thresh,
+            crowd_new_track_confirm_frames=cfg.tracker.crowd_new_track_confirm_frames,
+            crowd_appearance_weight=cfg.tracker.crowd_appearance_weight,
+            crowd_track_stability_weight=cfg.tracker.crowd_track_stability_weight,
+            crowd_boost_min_small_ratio=cfg.tracker.crowd_boost_min_small_ratio,
+            crowd_boost_max_median_area_ratio=cfg.tracker.crowd_boost_max_median_area_ratio,
+            crowd_boost_small_area_ratio_thresh=cfg.tracker.crowd_boost_small_area_ratio_thresh,
         )
         self.behavior = AbnormalDetector(
             roi=cfg.behavior.roi,
@@ -118,6 +144,11 @@ class VideoAnalyticsPipeline:
             loitering_support_activate_frames=cfg.behavior.loitering_support_activate_frames,
             loitering_support_block_running=cfg.behavior.loitering_support_block_running,
             loitering_context_gate_support_only=cfg.behavior.loitering_context_gate_support_only,
+            running_loitering_arb_enabled=cfg.behavior.running_loitering_arb_enabled,
+            running_loitering_min_loitering_score=cfg.behavior.running_loitering_min_loitering_score,
+            running_loitering_min_stationary_ratio=cfg.behavior.running_loitering_min_stationary_ratio,
+            running_loitering_max_movement_extent=cfg.behavior.running_loitering_max_movement_extent,
+            running_loitering_max_p90_speed=cfg.behavior.running_loitering_max_p90_speed,
             loitering_release_frames=cfg.behavior.loitering_release_frames,
             loitering_model_max_avg_speed=cfg.behavior.loitering_model_max_avg_speed,
             loitering_model_min_movement_extent=cfg.behavior.loitering_model_min_movement_extent,
@@ -225,7 +256,7 @@ class VideoAnalyticsPipeline:
                 "imgsz": self.cfg.model.imgsz,
                 "max_det": self.cfg.model.max_det,
                 "half": self.cfg.model.half,
-                "augment": self.cfg.model.augment,
+                "augment": self.runtime_augment,
                 "runtime_profile": self.runtime_profile,
                 "predict_conf": self.detector_predict_conf,
                 "conf_threshold": self.cfg.model.conf_threshold,
@@ -235,7 +266,7 @@ class VideoAnalyticsPipeline:
                 "track_high_thresh": self.runtime_track_high_thresh,
                 "track_low_thresh": self.cfg.tracker.track_low_thresh,
                 "new_track_thresh": self.runtime_new_track_thresh,
-                "match_thresh": self.cfg.tracker.match_thresh,
+                "match_thresh": self.runtime_match_thresh,
                 "low_match_thresh": self.cfg.tracker.low_match_thresh,
                 "unconfirmed_match_thresh": self.cfg.tracker.unconfirmed_match_thresh,
                 "score_fusion_weight": self.cfg.tracker.score_fusion_weight,
@@ -251,6 +282,15 @@ class VideoAnalyticsPipeline:
                 "appearance_reid_weights": self.cfg.tracker.appearance_reid_weights,
                 "appearance_reid_device": self.cfg.tracker.appearance_reid_device,
                 "appearance_reid_input_size": list(self.cfg.tracker.appearance_reid_input_size),
+                "crowd_boost_enabled": self.cfg.tracker.crowd_boost_enabled,
+                "crowd_boost_det_count": self.cfg.tracker.crowd_boost_det_count,
+                "crowd_match_thresh": self.cfg.tracker.crowd_match_thresh,
+                "crowd_low_match_thresh": self.cfg.tracker.crowd_low_match_thresh,
+                "crowd_appearance_weight": self.cfg.tracker.crowd_appearance_weight,
+                "crowd_track_stability_weight": self.cfg.tracker.crowd_track_stability_weight,
+                "crowd_boost_min_small_ratio": self.cfg.tracker.crowd_boost_min_small_ratio,
+                "crowd_boost_max_median_area_ratio": self.cfg.tracker.crowd_boost_max_median_area_ratio,
+                "crowd_boost_small_area_ratio_thresh": self.cfg.tracker.crowd_boost_small_area_ratio_thresh,
             },
             "behavior": {
                 "roi": list(self.cfg.behavior.roi),

@@ -33,6 +33,11 @@ tracker:
   appearance_reid_weights: ""
   appearance_reid_device: "0"
   appearance_reid_input_size: [256, 128]
+  crowd_boost_enabled: true
+  crowd_boost_det_count: 12
+  crowd_match_thresh: 0.82
+  crowd_low_match_thresh: 0.50
+  crowd_appearance_weight: 0.08
 
 behavior:
   roi: [200, 120, 500, 420]
@@ -54,13 +59,13 @@ behavior:
   behavior_ensemble_primary_weight: 0.9775
   behavior_ensemble_mode: "weighted"
   behavior_model_score_thresh: 0.96
-  behavior_model_min_frames: 15
+  behavior_model_min_frames: 8
   behavior_model_max_tracks: 30
   behavior_model_resume_tracks: 26
   behavior_secondary_max_tracks: 24
   behavior_secondary_resume_tracks: 18
   behavior_secondary_loitering_only: true
-  behavior_model_eval_interval: 3
+  behavior_model_eval_interval: 2
   loitering_hybrid_mode: "model_support"
   loitering_model_support_thresh: 0.85
   loitering_model_score_thresh: 0.96
@@ -86,9 +91,9 @@ behavior:
   loitering_max_neighbor_count: 3
   loitering_neighbor_radius: 80.0
   loitering_context_gate_support_only: true
-  running_model_min_avg_speed: 7.0
-  running_model_min_p90_speed: 12.0
-  running_model_min_movement_extent: 60.0
+  running_model_min_avg_speed: 5.0
+  running_model_min_p90_speed: 7.0
+  running_model_min_movement_extent: 35.0
 
 display:
   window_name: "Intelligent Video Monitor"

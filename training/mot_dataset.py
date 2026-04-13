@@ -9,8 +9,10 @@ import shutil
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import median
 
 import yaml
+from PIL import Image
 
 from training.config import PrepareConfig
 
@@ -151,6 +153,8 @@ class MOT17ToYOLOConverter:
         split_root.mkdir(parents=True, exist_ok=True)
 
         image_lists = {"train": [], "val": []}
+        dense_small_candidates: list[tuple[float, str, int]] = []
+        dense_small_crop_candidates: list[dict[str, object]] = []
         stats = {
             "total_sequences": len(sequences),
             "train_sequences": 0,
@@ -159,6 +163,9 @@ class MOT17ToYOLOConverter:
             "total_labels": 0,
             "images_per_split": {"train": 0, "val": 0},
             "labels_per_split": {"train": 0, "val": 0},
+            "dense_small_frames": 0,
+            "dense_small_extra_repeats": 0,
+            "dense_small_crop_frames": 0,
         }
 
         for sequence in sequences:
@@ -180,11 +187,36 @@ class MOT17ToYOLOConverter:
                 label_path.write_text("\n".join(labels), encoding="utf-8")
 
                 image_lists[split].append(str(linked_image.resolve()))
+                candidate = self._dense_small_repeat_candidate(
+                    sequence,
+                    frame_annotations.get(frame_id, []),
+                    split,
+                    str(linked_image.resolve()),
+                )
+                if candidate is not None:
+                    dense_small_candidates.append(candidate)
+                crop_candidate = self._dense_small_crop_candidate(
+                    sequence,
+                    image_path,
+                    frame_annotations.get(frame_id, []),
+                    split,
+                )
+                if crop_candidate is not None:
+                    dense_small_crop_candidates.append(crop_candidate)
                 stats["total_images"] += 1
                 stats["images_per_split"][split] += 1
                 if labels:
                     stats["total_labels"] += len(labels)
                     stats["labels_per_split"][split] += len(labels)
+
+        self._apply_dense_small_repeats(image_lists["train"], dense_small_candidates, stats)
+        self._apply_dense_small_crops(
+            image_lists["train"],
+            image_root / "train",
+            label_root / "train",
+            dense_small_crop_candidates,
+            stats,
+        )
 
         train_txt = split_root / "train.txt"
         val_txt = split_root / "val.txt"
@@ -214,6 +246,17 @@ class MOT17ToYOLOConverter:
                 "min_visibility": self.config.min_visibility,
                 "val_ratio": self.config.val_ratio,
                 "val_sequences": list(self.config.val_sequences),
+                "dense_small_repeat_factor": self.config.dense_small_repeat_factor,
+                "dense_small_max_repeat_frames": self.config.dense_small_max_repeat_frames,
+                "dense_small_min_gt_count": self.config.dense_small_min_gt_count,
+                "dense_small_min_small_ratio": self.config.dense_small_min_small_ratio,
+                "dense_small_max_median_area_ratio": self.config.dense_small_max_median_area_ratio,
+                "small_box_area_ratio_thresh": self.config.small_box_area_ratio_thresh,
+                "dense_small_crop_enable": self.config.dense_small_crop_enable,
+                "dense_small_crop_max_frames": self.config.dense_small_crop_max_frames,
+                "dense_small_crop_width_ratio": self.config.dense_small_crop_width_ratio,
+                "dense_small_crop_height_ratio": self.config.dense_small_crop_height_ratio,
+                "dense_small_crop_min_boxes": self.config.dense_small_crop_min_boxes,
             },
             "sequences": {
                 sequence.name: {
@@ -234,6 +277,244 @@ class MOT17ToYOLOConverter:
             encoding="utf-8",
         )
         return metadata
+
+    def _dense_small_repeat_candidate(
+        self,
+        sequence: MOTSequence,
+        annotations: list[dict[str, float | int]],
+        split: str,
+        image_path: str,
+    ) -> tuple[float, str, int] | None:
+        if split != "train":
+            return None
+        if self.config.dense_small_repeat_factor <= 1:
+            return None
+        if len(annotations) < self.config.dense_small_min_gt_count:
+            return None
+
+        frame_area = float(sequence.image_width * sequence.image_height)
+        area_ratios = [
+            float(ann["width"]) * float(ann["height"]) / frame_area
+            for ann in annotations
+        ]
+        if not area_ratios:
+            return None
+
+        small_count = sum(
+            1 for area_ratio in area_ratios if area_ratio <= self.config.small_box_area_ratio_thresh
+        )
+        small_ratio = small_count / len(area_ratios)
+        median_area_ratio = float(median(area_ratios))
+        if small_ratio < self.config.dense_small_min_small_ratio:
+            return None
+        if median_area_ratio > self.config.dense_small_max_median_area_ratio:
+            return None
+
+        # Favor crowded frames with many very small boxes.
+        score = (len(annotations) * small_ratio) / max(median_area_ratio, 1e-9)
+        return (float(score), image_path, self.config.dense_small_repeat_factor - 1)
+
+    def _dense_small_crop_candidate(
+        self,
+        sequence: MOTSequence,
+        image_path: Path,
+        annotations: list[dict[str, float | int]],
+        split: str,
+    ) -> dict[str, object] | None:
+        if split != "train":
+            return None
+        if not self.config.dense_small_crop_enable:
+            return None
+        if len(annotations) < self.config.dense_small_min_gt_count:
+            return None
+
+        frame_area = float(sequence.image_width * sequence.image_height)
+        area_ratios = [
+            float(ann["width"]) * float(ann["height"]) / frame_area
+            for ann in annotations
+        ]
+        if not area_ratios:
+            return None
+
+        small_annotations = [
+            ann
+            for ann, area_ratio in zip(annotations, area_ratios)
+            if area_ratio <= self.config.small_box_area_ratio_thresh
+        ]
+        if not small_annotations:
+            return None
+
+        small_ratio = len(small_annotations) / len(annotations)
+        median_area_ratio = float(median(area_ratios))
+        if small_ratio < self.config.dense_small_min_small_ratio:
+            return None
+        if median_area_ratio > self.config.dense_small_max_median_area_ratio:
+            return None
+
+        score = (len(annotations) * small_ratio) / max(median_area_ratio, 1e-9)
+        return {
+            "score": float(score),
+            "sequence": sequence,
+            "image_path": image_path,
+            "annotations": annotations,
+            "small_annotations": small_annotations,
+        }
+
+    def _apply_dense_small_repeats(
+        self,
+        train_image_list: list[str],
+        candidates: list[tuple[float, str, int]],
+        stats: dict[str, object],
+    ) -> None:
+        if not candidates:
+            return
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        if self.config.dense_small_max_repeat_frames is not None:
+            candidates = candidates[: self.config.dense_small_max_repeat_frames]
+
+        extra_repeats = 0
+        for _, image_path, repeat_count in candidates:
+            train_image_list.extend([image_path] * repeat_count)
+            extra_repeats += repeat_count
+
+        stats["dense_small_frames"] = len(candidates)
+        stats["dense_small_extra_repeats"] = extra_repeats
+
+    def _apply_dense_small_crops(
+        self,
+        train_image_list: list[str],
+        image_dir: Path,
+        label_dir: Path,
+        candidates: list[dict[str, object]],
+        stats: dict[str, object],
+    ) -> None:
+        if not candidates:
+            return
+
+        candidates.sort(key=lambda item: float(item["score"]), reverse=True)
+        if self.config.dense_small_crop_max_frames is not None:
+            candidates = candidates[: self.config.dense_small_crop_max_frames]
+
+        crop_count = 0
+        for candidate in candidates:
+            crop_path = self._write_dense_small_crop(image_dir, label_dir, candidate)
+            if crop_path is None:
+                continue
+            train_image_list.append(str(crop_path.resolve()))
+            crop_count += 1
+
+        stats["dense_small_crop_frames"] = crop_count
+
+    def _write_dense_small_crop(
+        self,
+        image_dir: Path,
+        label_dir: Path,
+        candidate: dict[str, object],
+    ) -> Path | None:
+        sequence = candidate["sequence"]
+        if not isinstance(sequence, MOTSequence):
+            return None
+
+        image_path = candidate["image_path"]
+        annotations = candidate["annotations"]
+        small_annotations = candidate["small_annotations"]
+        if not isinstance(image_path, Path) or not isinstance(annotations, list) or not isinstance(small_annotations, list):
+            return None
+
+        crop_box = self._select_dense_small_crop_box(sequence, small_annotations)
+        if crop_box is None:
+            return None
+
+        cropped_labels = self._build_crop_labels(sequence, annotations, crop_box)
+        if len(cropped_labels) < self.config.dense_small_crop_min_boxes:
+            return None
+
+        x1, y1, x2, y2 = crop_box
+        with Image.open(image_path) as image:
+            cropped = image.crop((x1, y1, x2, y2))
+            stem = f"{sequence.name}_{image_path.stem}_crop_{x1}_{y1}_{x2}_{y2}"
+            image_output_path = image_dir / f"{stem}{image_path.suffix.lower()}"
+            label_output_path = label_dir / f"{stem}.txt"
+            cropped.save(image_output_path)
+            label_output_path.write_text("\n".join(cropped_labels), encoding="utf-8")
+        return image_output_path
+
+    def _select_dense_small_crop_box(
+        self,
+        sequence: MOTSequence,
+        small_annotations: list[dict[str, float | int]],
+    ) -> tuple[int, int, int, int] | None:
+        crop_w = max(64, int(round(sequence.image_width * self.config.dense_small_crop_width_ratio)))
+        crop_h = max(64, int(round(sequence.image_height * self.config.dense_small_crop_height_ratio)))
+        crop_w = min(crop_w, sequence.image_width)
+        crop_h = min(crop_h, sequence.image_height)
+
+        best_score = -1.0
+        best_box: tuple[int, int, int, int] | None = None
+        frame_area = float(sequence.image_width * sequence.image_height)
+        for ann in small_annotations:
+            center_x = float(ann["left"]) + float(ann["width"]) / 2.0
+            center_y = float(ann["top"]) + float(ann["height"]) / 2.0
+            x1 = int(round(center_x - crop_w / 2.0))
+            y1 = int(round(center_y - crop_h / 2.0))
+            x1 = min(max(0, x1), sequence.image_width - crop_w)
+            y1 = min(max(0, y1), sequence.image_height - crop_h)
+            x2 = x1 + crop_w
+            y2 = y1 + crop_h
+
+            score = 0.0
+            for candidate_ann in small_annotations:
+                candidate_cx = float(candidate_ann["left"]) + float(candidate_ann["width"]) / 2.0
+                candidate_cy = float(candidate_ann["top"]) + float(candidate_ann["height"]) / 2.0
+                if x1 <= candidate_cx <= x2 and y1 <= candidate_cy <= y2:
+                    area_ratio = (
+                        float(candidate_ann["width"]) * float(candidate_ann["height"]) / frame_area
+                    )
+                    score += 1.0 / max(area_ratio, 1e-9)
+
+            if score > best_score:
+                best_score = score
+                best_box = (x1, y1, x2, y2)
+
+        return best_box
+
+    def _build_crop_labels(
+        self,
+        sequence: MOTSequence,
+        annotations: list[dict[str, float | int]],
+        crop_box: tuple[int, int, int, int],
+    ) -> list[str]:
+        x1, y1, x2, y2 = crop_box
+        crop_w = float(x2 - x1)
+        crop_h = float(y2 - y1)
+        labels: list[str] = []
+
+        for ann in annotations:
+            box_x1 = float(ann["left"])
+            box_y1 = float(ann["top"])
+            box_x2 = box_x1 + float(ann["width"])
+            box_y2 = box_y1 + float(ann["height"])
+            center_x = (box_x1 + box_x2) / 2.0
+            center_y = (box_y1 + box_y2) / 2.0
+            if not (x1 <= center_x <= x2 and y1 <= center_y <= y2):
+                continue
+
+            clipped_x1 = max(box_x1, float(x1))
+            clipped_y1 = max(box_y1, float(y1))
+            clipped_x2 = min(box_x2, float(x2))
+            clipped_y2 = min(box_y2, float(y2))
+            clipped_w = clipped_x2 - clipped_x1
+            clipped_h = clipped_y2 - clipped_y1
+            if clipped_w <= 1 or clipped_h <= 1:
+                continue
+
+            yolo_x = ((clipped_x1 + clipped_x2) / 2.0 - x1) / crop_w
+            yolo_y = ((clipped_y1 + clipped_y2) / 2.0 - y1) / crop_h
+            yolo_w = clipped_w / crop_w
+            yolo_h = clipped_h / crop_h
+            labels.append(f"0 {yolo_x:.6f} {yolo_y:.6f} {yolo_w:.6f} {yolo_h:.6f}")
+
+        return labels
 
     def _build_split_map(self, sequences: list[MOTSequence]) -> dict[str, str]:
         base_names = sorted({sequence.base_name for sequence in sequences})
@@ -279,4 +560,3 @@ class MOT17ToYOLOConverter:
             os.link(src, dst)
         except OSError:
             shutil.copy2(src, dst)
-

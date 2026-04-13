@@ -5,27 +5,28 @@ source:
   mot17_seq: "bs/data/MOT17/train/MOT17-10-FRCNN/img1/%06d.jpg"
 
 model:
-  model_path: "bs/output/training/mot17_person_gpu_40e_960_v8s_fair/weights/best.pt"
+  model_path: "bs/output/training/dancetrack_person_v8n_e5_640_b8_w0/weights/best.pt"
   device: "0"
-  imgsz: 960
-  augment: true
+  imgsz: 640
+  nms_iou: 0.7
+  augment: false
   runtime_profile: "balanced"
-  predict_conf: 0.18
-  conf_threshold: 0.18
+  predict_conf: 0.23
+  conf_threshold: 0.23
   classes: [0]
 
 tracker:
-  track_high_thresh: 0.5
-  track_low_thresh: 0.10
-  new_track_thresh: 0.58
-  match_thresh: 0.8
-  low_match_thresh: 0.5
-  unconfirmed_match_thresh: 0.7
-  max_time_lost: 30
+  track_high_thresh: 0.52
+  track_low_thresh: 0.16
+  new_track_thresh: 0.75
+  match_thresh: 0.76
+  low_match_thresh: 0.43
+  unconfirmed_match_thresh: 0.62
+  max_time_lost: 13
   min_box_area: 10.0
   appearance_enabled: true
-  appearance_weight: 0.05
-  appearance_ambiguity_margin: 0.03
+  appearance_weight: 0.43
+  appearance_ambiguity_margin: 0.305
   appearance_feature_mode: "deep_reid"
   appearance_hist_bins: [6, 3, 3]
   appearance_min_box_size: 16
@@ -33,6 +34,12 @@ tracker:
   appearance_reid_weights: ""
   appearance_reid_device: "0"
   appearance_reid_input_size: [256, 128]
+  crowd_boost_enabled: true
+  crowd_boost_det_count: 16
+  crowd_match_thresh: 0.76
+  crowd_low_match_thresh: 0.445
+  crowd_new_track_confirm_frames: 2
+  crowd_appearance_weight: 0.49
 
 behavior:
   roi: [200, 120, 500, 420]
@@ -69,11 +76,6 @@ behavior:
   loitering_activate_frames: 1
   loitering_support_activate_frames: 4
   loitering_release_frames: 1
-  running_loitering_arb_enabled: false
-  running_loitering_min_loitering_score: 0.72
-  running_loitering_min_stationary_ratio: 0.90
-  running_loitering_max_movement_extent: 50.0
-  running_loitering_max_p90_speed: 3.0
   loitering_model_max_avg_speed: 2.2
   loitering_model_max_movement_extent: 75.0
   loitering_model_max_centroid_radius: 40.0

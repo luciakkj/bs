@@ -9,7 +9,7 @@ model:
   device: "0"
   imgsz: 960
   augment: true
-  runtime_profile: "balanced"
+  runtime_profile: "tracking_boost"
   predict_conf: 0.18
   conf_threshold: 0.18
   classes: [0]
@@ -24,7 +24,7 @@ tracker:
   max_time_lost: 30
   min_box_area: 10.0
   appearance_enabled: true
-  appearance_weight: 0.05
+  appearance_weight: 0.06
   appearance_ambiguity_margin: 0.03
   appearance_feature_mode: "deep_reid"
   appearance_hist_bins: [6, 3, 3]
@@ -69,11 +69,6 @@ behavior:
   loitering_activate_frames: 1
   loitering_support_activate_frames: 4
   loitering_release_frames: 1
-  running_loitering_arb_enabled: false
-  running_loitering_min_loitering_score: 0.72
-  running_loitering_min_stationary_ratio: 0.90
-  running_loitering_max_movement_extent: 50.0
-  running_loitering_max_p90_speed: 3.0
   loitering_model_max_avg_speed: 2.2
   loitering_model_max_movement_extent: 75.0
   loitering_model_max_centroid_radius: 40.0

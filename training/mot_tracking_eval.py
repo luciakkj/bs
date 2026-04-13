@@ -30,6 +30,7 @@ def _resolve_runtime_params(cfg: MOTTrackingEvalConfig) -> dict[str, Any]:
     device = cfg.device if cfg.device is not None else app_cfg.model.device
     imgsz = cfg.imgsz if cfg.imgsz is not None else app_cfg.model.imgsz
     max_det = cfg.max_det if cfg.max_det is not None else app_cfg.model.max_det
+    nms_iou = cfg.nms_iou if cfg.nms_iou is not None else app_cfg.model.nms_iou
     half = cfg.half if cfg.half is not None else app_cfg.model.half
     augment = cfg.augment if cfg.augment is not None else app_cfg.model.augment
 
@@ -45,6 +46,11 @@ def _resolve_runtime_params(cfg: MOTTrackingEvalConfig) -> dict[str, Any]:
     track_high_thresh = cfg.track_high_thresh if cfg.track_high_thresh is not None else app_cfg.tracker.track_high_thresh
     track_low_thresh = cfg.track_low_thresh if cfg.track_low_thresh is not None else app_cfg.tracker.track_low_thresh
     new_track_thresh = cfg.new_track_thresh if cfg.new_track_thresh is not None else app_cfg.tracker.new_track_thresh
+    new_track_confirm_frames = (
+        cfg.new_track_confirm_frames
+        if cfg.new_track_confirm_frames is not None
+        else app_cfg.tracker.new_track_confirm_frames
+    )
     match_thresh = cfg.match_thresh if cfg.match_thresh is not None else app_cfg.tracker.match_thresh
     low_match_thresh = cfg.low_match_thresh if cfg.low_match_thresh is not None else app_cfg.tracker.low_match_thresh
     unconfirmed_match_thresh = (
@@ -65,6 +71,12 @@ def _resolve_runtime_params(cfg: MOTTrackingEvalConfig) -> dict[str, Any]:
         predict_conf = min(float(predict_conf), 0.18)
         track_high_thresh = min(float(track_high_thresh), 0.42)
         new_track_thresh = min(float(new_track_thresh), 0.55)
+    elif cfg.apply_runtime_profile and runtime_profile == "tracking_boost":
+        augment = False
+        predict_conf = min(float(predict_conf), 0.12)
+        track_high_thresh = min(float(track_high_thresh), 0.38)
+        new_track_thresh = min(float(new_track_thresh), 0.48)
+        match_thresh = min(float(match_thresh), 0.78)
 
     return {
         "config_path": str(cfg.config_path),
@@ -73,12 +85,14 @@ def _resolve_runtime_params(cfg: MOTTrackingEvalConfig) -> dict[str, Any]:
         "device": device,
         "imgsz": imgsz,
         "max_det": max_det,
+        "nms_iou": float(nms_iou) if nms_iou is not None else None,
         "half": bool(half),
         "augment": bool(augment),
         "predict_conf": float(predict_conf),
         "track_high_thresh": float(track_high_thresh),
         "track_low_thresh": float(track_low_thresh),
         "new_track_thresh": float(new_track_thresh),
+        "new_track_confirm_frames": int(new_track_confirm_frames),
         "match_thresh": float(match_thresh),
         "low_match_thresh": float(low_match_thresh),
         "unconfirmed_match_thresh": float(unconfirmed_match_thresh),
@@ -95,6 +109,11 @@ def _resolve_runtime_params(cfg: MOTTrackingEvalConfig) -> dict[str, Any]:
             cfg.appearance_ambiguity_margin
             if cfg.appearance_ambiguity_margin is not None
             else app_cfg.tracker.appearance_ambiguity_margin
+        ),
+        "appearance_all_valid": bool(
+            cfg.appearance_all_valid
+            if cfg.appearance_all_valid is not None
+            else app_cfg.tracker.appearance_all_valid
         ),
         "appearance_feature_mode": str(
             cfg.appearance_feature_mode
@@ -137,7 +156,117 @@ def _resolve_runtime_params(cfg: MOTTrackingEvalConfig) -> dict[str, Any]:
                 else app_cfg.tracker.appearance_reid_input_size
             )
         ),
+        "appearance_reid_flip_aug": bool(
+            cfg.appearance_reid_flip_aug
+            if cfg.appearance_reid_flip_aug is not None
+            else app_cfg.tracker.appearance_reid_flip_aug
+        ),
+        "track_stability_weight": float(
+            cfg.track_stability_weight
+            if cfg.track_stability_weight is not None
+            else app_cfg.tracker.track_stability_weight
+        ),
+        "motion_gate_enabled": bool(
+            cfg.motion_gate_enabled
+            if cfg.motion_gate_enabled is not None
+            else app_cfg.tracker.motion_gate_enabled
+        ),
+        "motion_gate_thresh": float(
+            cfg.motion_gate_thresh
+            if cfg.motion_gate_thresh is not None
+            else app_cfg.tracker.motion_gate_thresh
+        ),
+        "crowd_boost_enabled": bool(
+            cfg.crowd_boost_enabled if cfg.crowd_boost_enabled is not None else app_cfg.tracker.crowd_boost_enabled
+        ),
+        "crowd_boost_det_count": int(
+            cfg.crowd_boost_det_count if cfg.crowd_boost_det_count is not None else app_cfg.tracker.crowd_boost_det_count
+        ),
+        "crowd_match_thresh": (
+            float(cfg.crowd_match_thresh)
+            if cfg.crowd_match_thresh is not None
+            else (
+                float(app_cfg.tracker.crowd_match_thresh)
+                if app_cfg.tracker.crowd_match_thresh is not None
+                else None
+            )
+        ),
+        "crowd_low_match_thresh": (
+            float(cfg.crowd_low_match_thresh)
+            if cfg.crowd_low_match_thresh is not None
+            else (
+                float(app_cfg.tracker.crowd_low_match_thresh)
+                if app_cfg.tracker.crowd_low_match_thresh is not None
+                else None
+            )
+        ),
+        "crowd_new_track_confirm_frames": (
+            int(cfg.crowd_new_track_confirm_frames)
+            if cfg.crowd_new_track_confirm_frames is not None
+            else (
+                int(app_cfg.tracker.crowd_new_track_confirm_frames)
+                if app_cfg.tracker.crowd_new_track_confirm_frames is not None
+                else None
+            )
+        ),
+        "crowd_appearance_weight": (
+            float(cfg.crowd_appearance_weight)
+            if cfg.crowd_appearance_weight is not None
+            else (
+                float(app_cfg.tracker.crowd_appearance_weight)
+                if app_cfg.tracker.crowd_appearance_weight is not None
+                else None
+            )
+        ),
+        "crowd_track_stability_weight": (
+            float(cfg.crowd_track_stability_weight)
+            if cfg.crowd_track_stability_weight is not None
+            else (
+                float(app_cfg.tracker.crowd_track_stability_weight)
+                if app_cfg.tracker.crowd_track_stability_weight is not None
+                else None
+            )
+        ),
+        "crowd_boost_min_small_ratio": (
+            float(cfg.crowd_boost_min_small_ratio)
+            if cfg.crowd_boost_min_small_ratio is not None
+            else (
+                float(app_cfg.tracker.crowd_boost_min_small_ratio)
+                if app_cfg.tracker.crowd_boost_min_small_ratio is not None
+                else None
+            )
+        ),
+        "crowd_boost_max_median_area_ratio": (
+            float(cfg.crowd_boost_max_median_area_ratio)
+            if cfg.crowd_boost_max_median_area_ratio is not None
+            else (
+                float(app_cfg.tracker.crowd_boost_max_median_area_ratio)
+                if app_cfg.tracker.crowd_boost_max_median_area_ratio is not None
+                else None
+            )
+        ),
+        "crowd_boost_small_area_ratio_thresh": (
+            float(cfg.crowd_boost_small_area_ratio_thresh)
+            if cfg.crowd_boost_small_area_ratio_thresh is not None
+            else float(app_cfg.tracker.crowd_boost_small_area_ratio_thresh)
+        ),
     }
+
+
+def _load_sequence_runtime_overrides(cfg: MOTTrackingEvalConfig) -> dict[str, dict[str, Any]]:
+    if cfg.sequence_runtime_overrides_path is None:
+        return {}
+    path = cfg.sequence_runtime_overrides_path
+    if not path.exists():
+        raise FileNotFoundError(f"Sequence runtime overrides file not found: {path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("Sequence runtime overrides must be a JSON object mapping sequence names to override dicts.")
+    normalized: dict[str, dict[str, Any]] = {}
+    for key, value in raw.items():
+        if isinstance(value, dict):
+            normalized[str(key)] = dict(value)
+    return normalized
 
 
 def _iter_sequence_dirs(cfg: MOTTrackingEvalConfig) -> list[Path]:
@@ -180,6 +309,18 @@ def _read_seqinfo(seq_dir: Path) -> dict[str, Any]:
         "im_dir": section.get("imDir", "img1"),
         "im_ext": section.get("imExt", ".jpg"),
     }
+
+
+def _resolve_frame_path(image_dir: Path, frame_id: int, image_ext: str) -> Path:
+    candidates = (
+        image_dir / f"{frame_id:06d}{image_ext}",
+        image_dir / f"{frame_id:08d}{image_ext}",
+        image_dir / f"{frame_id}{image_ext}",
+    )
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
 
 
 def _load_gt_by_frame(seq_dir: Path, include_classes: tuple[int, ...], min_visibility: float) -> dict[int, list[dict[str, float]]]:
@@ -249,18 +390,11 @@ def _jsonify(value: Any) -> Any:
 def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
     cfg = config.resolved()
     runtime = _resolve_runtime_params(cfg)
+    sequence_runtime_overrides = _load_sequence_runtime_overrides(cfg)
     sequence_dirs = _iter_sequence_dirs(cfg)
 
-    detector = YOLODetector(
-        runtime["model_path"],
-        conf=runtime["predict_conf"],
-        classes=[0],
-        device=runtime["device"],
-        imgsz=runtime["imgsz"],
-        max_det=runtime["max_det"],
-        half=runtime["half"],
-        augment=runtime["augment"],
-    )
+    detector = None
+    detector_signature = None
 
     metric_names = [
         "num_frames",
@@ -290,6 +424,35 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
     eval_started = time.perf_counter()
 
     for seq_dir in sequence_dirs:
+        seq_runtime = dict(runtime)
+        seq_override = sequence_runtime_overrides.get(seq_dir.name, {})
+        for key, value in seq_override.items():
+            if key in seq_runtime:
+                seq_runtime[key] = value
+
+        current_detector_signature = (
+            seq_runtime["model_path"],
+            seq_runtime["predict_conf"],
+            seq_runtime["device"],
+            seq_runtime["imgsz"],
+            seq_runtime["max_det"],
+            seq_runtime["half"],
+            seq_runtime["augment"],
+        )
+        if detector is None or current_detector_signature != detector_signature:
+            detector = YOLODetector(
+                seq_runtime["model_path"],
+                conf=seq_runtime["predict_conf"],
+                classes=[0],
+                device=seq_runtime["device"],
+                imgsz=seq_runtime["imgsz"],
+                max_det=seq_runtime["max_det"],
+                nms_iou=seq_runtime["nms_iou"],
+                half=seq_runtime["half"],
+                augment=seq_runtime["augment"],
+            )
+            detector_signature = current_detector_signature
+
         seqinfo = _read_seqinfo(seq_dir)
         gt_by_frame = _load_gt_by_frame(seq_dir, cfg.include_classes, cfg.min_visibility)
         image_dir = seq_dir / seqinfo["im_dir"]
@@ -298,25 +461,41 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
             sequence_length = min(sequence_length, int(cfg.max_frames))
 
         tracker = ByteTrackerLite(
-            track_high_thresh=runtime["track_high_thresh"],
-            track_low_thresh=runtime["track_low_thresh"],
-            new_track_thresh=runtime["new_track_thresh"],
-            match_thresh=runtime["match_thresh"],
-            low_match_thresh=runtime["low_match_thresh"],
-            unconfirmed_match_thresh=runtime["unconfirmed_match_thresh"],
-            score_fusion_weight=runtime["score_fusion_weight"],
-            max_time_lost=runtime["max_time_lost"],
-            min_box_area=runtime["min_box_area"],
-            appearance_enabled=runtime["appearance_enabled"],
-            appearance_weight=runtime["appearance_weight"],
-            appearance_ambiguity_margin=runtime["appearance_ambiguity_margin"],
-            appearance_feature_mode=runtime["appearance_feature_mode"],
-            appearance_hist_bins=runtime["appearance_hist_bins"],
-            appearance_min_box_size=runtime["appearance_min_box_size"],
-            appearance_reid_model=runtime["appearance_reid_model"],
-            appearance_reid_weights=runtime["appearance_reid_weights"],
-            appearance_reid_device=runtime["appearance_reid_device"],
-            appearance_reid_input_size=runtime["appearance_reid_input_size"],
+            track_high_thresh=seq_runtime["track_high_thresh"],
+            track_low_thresh=seq_runtime["track_low_thresh"],
+            new_track_thresh=seq_runtime["new_track_thresh"],
+            new_track_confirm_frames=seq_runtime["new_track_confirm_frames"],
+            match_thresh=seq_runtime["match_thresh"],
+            low_match_thresh=seq_runtime["low_match_thresh"],
+            unconfirmed_match_thresh=seq_runtime["unconfirmed_match_thresh"],
+            score_fusion_weight=seq_runtime["score_fusion_weight"],
+            max_time_lost=seq_runtime["max_time_lost"],
+            min_box_area=seq_runtime["min_box_area"],
+            appearance_enabled=seq_runtime["appearance_enabled"],
+            appearance_weight=seq_runtime["appearance_weight"],
+            appearance_ambiguity_margin=seq_runtime["appearance_ambiguity_margin"],
+            appearance_all_valid=seq_runtime["appearance_all_valid"],
+            appearance_feature_mode=seq_runtime["appearance_feature_mode"],
+            appearance_hist_bins=seq_runtime["appearance_hist_bins"],
+            appearance_min_box_size=seq_runtime["appearance_min_box_size"],
+            appearance_reid_model=seq_runtime["appearance_reid_model"],
+            appearance_reid_weights=seq_runtime["appearance_reid_weights"],
+            appearance_reid_device=seq_runtime["appearance_reid_device"],
+            appearance_reid_input_size=seq_runtime["appearance_reid_input_size"],
+            appearance_reid_flip_aug=seq_runtime["appearance_reid_flip_aug"],
+            track_stability_weight=seq_runtime["track_stability_weight"],
+            motion_gate_enabled=seq_runtime["motion_gate_enabled"],
+            motion_gate_thresh=seq_runtime["motion_gate_thresh"],
+            crowd_boost_enabled=seq_runtime["crowd_boost_enabled"],
+            crowd_boost_det_count=seq_runtime["crowd_boost_det_count"],
+            crowd_match_thresh=seq_runtime["crowd_match_thresh"],
+            crowd_low_match_thresh=seq_runtime["crowd_low_match_thresh"],
+            crowd_new_track_confirm_frames=seq_runtime["crowd_new_track_confirm_frames"],
+            crowd_appearance_weight=seq_runtime["crowd_appearance_weight"],
+            crowd_track_stability_weight=seq_runtime["crowd_track_stability_weight"],
+            crowd_boost_min_small_ratio=seq_runtime["crowd_boost_min_small_ratio"],
+            crowd_boost_max_median_area_ratio=seq_runtime["crowd_boost_max_median_area_ratio"],
+            crowd_boost_small_area_ratio_thresh=seq_runtime["crowd_boost_small_area_ratio_thresh"],
         )
         accumulator = mm.MOTAccumulator(auto_id=False)
         mot_rows: list[list[float]] = []
@@ -325,7 +504,7 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
         seq_started = time.perf_counter()
 
         for frame_id in range(1, sequence_length + 1):
-            frame_path = image_dir / f"{frame_id:06d}{seqinfo['im_ext']}"
+            frame_path = _resolve_frame_path(image_dir, frame_id, seqinfo["im_ext"])
             frame = cv2.imread(str(frame_path))
             if frame is None:
                 raise FileNotFoundError(f"Frame not found or unreadable: {frame_path}")
@@ -389,6 +568,9 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
                 "avg_tracks_per_frame": float(tracks_total / max(sequence_length, 1)),
                 "runtime_seconds": float(seq_seconds),
                 "fps_tracking_eval": float(sequence_length / seq_seconds) if seq_seconds > 0 else None,
+                "runtime_overrides_applied": {
+                    str(key): _jsonify(value) for key, value in seq_override.items() if key in seq_runtime
+                },
             }
         )
 
@@ -409,6 +591,9 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
             "split_name": cfg.split_name,
             "detector_filter": cfg.detector_filter,
             "sequence_names": list(cfg.sequence_names),
+            "sequence_runtime_overrides_path": (
+                str(cfg.sequence_runtime_overrides_path) if cfg.sequence_runtime_overrides_path else None
+            ),
             "include_classes": list(cfg.include_classes),
             "min_visibility": float(cfg.min_visibility),
             "min_iou": float(cfg.min_iou),

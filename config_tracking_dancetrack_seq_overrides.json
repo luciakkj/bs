@@ -1,0 +1,40 @@
+{
+  "dancetrack0014": {
+    "crowd_boost_enabled": false,
+    "low_match_thresh": 0.45,
+    "new_track_thresh": 0.765,
+    "appearance_weight": 0.39
+  },
+  "dancetrack0019": {
+    "crowd_boost_enabled": false,
+    "predict_conf": 0.24,
+    "low_match_thresh": 0.45,
+    "new_track_thresh": 0.77,
+    "appearance_weight": 0.4,
+    "appearance_ambiguity_margin": 0.3
+  },
+  "dancetrack0034": {
+    "crowd_boost_enabled": false,
+    "low_match_thresh": 0.445,
+    "new_track_thresh": 0.77,
+    "appearance_weight": 0.4
+  },
+  "dancetrack0041": {
+    "crowd_boost_enabled": false,
+    "low_match_thresh": 0.45,
+    "new_track_thresh": 0.765,
+    "track_stability_weight": 0.005,
+    "appearance_weight": 0.39
+  },
+  "dancetrack0081": {
+    "crowd_appearance_weight": 0.48,
+    "crowd_low_match_thresh": 0.44,
+    "new_track_thresh": 0.755
+  },
+  "dancetrack0090": {
+    "crowd_boost_enabled": false,
+    "low_match_thresh": 0.45,
+    "new_track_thresh": 0.765,
+    "appearance_weight": 0.39
+  }
+}

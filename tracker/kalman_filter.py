@@ -64,6 +64,21 @@ class KalmanFilterXYAH:
         covariance = np.linalg.multi_dot((self._update_mat, covariance, self._update_mat.T))
         return mean.astype(np.float32), (covariance + innovation_cov).astype(np.float32)
 
+    def gating_distance(
+        self,
+        mean: np.ndarray,
+        covariance: np.ndarray,
+        measurements: np.ndarray,
+    ) -> np.ndarray:
+        projected_mean, projected_cov = self.project(mean, covariance)
+        if measurements.ndim == 1:
+            measurements = measurements.reshape(1, -1)
+        cholesky = np.linalg.cholesky(projected_cov)
+        innovation = measurements - projected_mean
+        solved = np.linalg.solve(cholesky, innovation.T)
+        distances = np.sum(solved * solved, axis=0)
+        return distances.astype(np.float32)
+
     def update(
         self,
         mean: np.ndarray,

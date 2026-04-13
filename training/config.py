@@ -25,6 +25,17 @@ class PrepareConfig:
     val_ratio: float = 0.25
     val_sequences: tuple[str, ...] = ()
     overwrite: bool = False
+    dense_small_repeat_factor: int = 1
+    dense_small_max_repeat_frames: int | None = None
+    dense_small_min_gt_count: int = 12
+    dense_small_min_small_ratio: float = 0.7
+    dense_small_max_median_area_ratio: float = 0.002
+    small_box_area_ratio_thresh: float = 0.002
+    dense_small_crop_enable: bool = False
+    dense_small_crop_max_frames: int | None = None
+    dense_small_crop_width_ratio: float = 0.5
+    dense_small_crop_height_ratio: float = 0.5
+    dense_small_crop_min_boxes: int = 6
 
     def resolved(self) -> "PrepareConfig":
         return PrepareConfig(
@@ -37,6 +48,25 @@ class PrepareConfig:
             val_ratio=float(self.val_ratio),
             val_sequences=tuple(self.val_sequences),
             overwrite=bool(self.overwrite),
+            dense_small_repeat_factor=max(1, int(self.dense_small_repeat_factor)),
+            dense_small_max_repeat_frames=(
+                max(1, int(self.dense_small_max_repeat_frames))
+                if self.dense_small_max_repeat_frames is not None
+                else None
+            ),
+            dense_small_min_gt_count=max(1, int(self.dense_small_min_gt_count)),
+            dense_small_min_small_ratio=float(self.dense_small_min_small_ratio),
+            dense_small_max_median_area_ratio=float(self.dense_small_max_median_area_ratio),
+            small_box_area_ratio_thresh=float(self.small_box_area_ratio_thresh),
+            dense_small_crop_enable=bool(self.dense_small_crop_enable),
+            dense_small_crop_max_frames=(
+                max(1, int(self.dense_small_crop_max_frames))
+                if self.dense_small_crop_max_frames is not None
+                else None
+            ),
+            dense_small_crop_width_ratio=float(self.dense_small_crop_width_ratio),
+            dense_small_crop_height_ratio=float(self.dense_small_crop_height_ratio),
+            dense_small_crop_min_boxes=max(1, int(self.dense_small_crop_min_boxes)),
         )
 
 
@@ -99,6 +129,7 @@ class MOTTrackingEvalConfig:
     split_name: str = "train"
     detector_filter: str | None = "FRCNN"
     sequence_names: tuple[str, ...] = ()
+    sequence_runtime_overrides_path: Path | None = None
     include_classes: tuple[int, ...] = (1,)
     min_visibility: float = 0.0
     min_iou: float = 0.5
@@ -108,12 +139,14 @@ class MOTTrackingEvalConfig:
     device: str | int | None = None
     imgsz: int | None = None
     max_det: int | None = None
+    nms_iou: float | None = None
     half: bool | None = None
     augment: bool | None = None
     predict_conf: float | None = None
     track_high_thresh: float | None = None
     track_low_thresh: float | None = None
     new_track_thresh: float | None = None
+    new_track_confirm_frames: int | None = None
     match_thresh: float | None = None
     low_match_thresh: float | None = None
     unconfirmed_match_thresh: float | None = None
@@ -123,6 +156,7 @@ class MOTTrackingEvalConfig:
     appearance_enabled: bool | None = None
     appearance_weight: float | None = None
     appearance_ambiguity_margin: float | None = None
+    appearance_all_valid: bool | None = None
     appearance_feature_mode: str | None = None
     appearance_hist_bins: tuple[int, int, int] | None = None
     appearance_min_box_size: int | None = None
@@ -130,6 +164,20 @@ class MOTTrackingEvalConfig:
     appearance_reid_weights: Path | None = None
     appearance_reid_device: str | None = None
     appearance_reid_input_size: tuple[int, int] | None = None
+    appearance_reid_flip_aug: bool | None = None
+    track_stability_weight: float | None = None
+    motion_gate_enabled: bool | None = None
+    motion_gate_thresh: float | None = None
+    crowd_boost_enabled: bool | None = None
+    crowd_boost_det_count: int | None = None
+    crowd_match_thresh: float | None = None
+    crowd_low_match_thresh: float | None = None
+    crowd_new_track_confirm_frames: int | None = None
+    crowd_appearance_weight: float | None = None
+    crowd_track_stability_weight: float | None = None
+    crowd_boost_min_small_ratio: float | None = None
+    crowd_boost_max_median_area_ratio: float | None = None
+    crowd_boost_small_area_ratio_thresh: float | None = None
 
     def resolved(self) -> "MOTTrackingEvalConfig":
         return MOTTrackingEvalConfig(
@@ -140,6 +188,11 @@ class MOTTrackingEvalConfig:
             split_name=str(self.split_name),
             detector_filter=str(self.detector_filter) if self.detector_filter else None,
             sequence_names=tuple(str(item) for item in self.sequence_names),
+            sequence_runtime_overrides_path=(
+                resolve_path(self.sequence_runtime_overrides_path)
+                if self.sequence_runtime_overrides_path
+                else None
+            ),
             include_classes=tuple(int(item) for item in self.include_classes),
             min_visibility=float(self.min_visibility),
             min_iou=float(self.min_iou),
@@ -149,12 +202,14 @@ class MOTTrackingEvalConfig:
             device=self.device,
             imgsz=int(self.imgsz) if self.imgsz is not None else None,
             max_det=int(self.max_det) if self.max_det is not None else None,
+            nms_iou=float(self.nms_iou) if self.nms_iou is not None else None,
             half=bool(self.half) if self.half is not None else None,
             augment=bool(self.augment) if self.augment is not None else None,
             predict_conf=float(self.predict_conf) if self.predict_conf is not None else None,
             track_high_thresh=float(self.track_high_thresh) if self.track_high_thresh is not None else None,
             track_low_thresh=float(self.track_low_thresh) if self.track_low_thresh is not None else None,
             new_track_thresh=float(self.new_track_thresh) if self.new_track_thresh is not None else None,
+            new_track_confirm_frames=int(self.new_track_confirm_frames) if self.new_track_confirm_frames is not None else None,
             match_thresh=float(self.match_thresh) if self.match_thresh is not None else None,
             low_match_thresh=float(self.low_match_thresh) if self.low_match_thresh is not None else None,
             unconfirmed_match_thresh=float(self.unconfirmed_match_thresh) if self.unconfirmed_match_thresh is not None else None,
@@ -164,6 +219,7 @@ class MOTTrackingEvalConfig:
             appearance_enabled=bool(self.appearance_enabled) if self.appearance_enabled is not None else None,
             appearance_weight=float(self.appearance_weight) if self.appearance_weight is not None else None,
             appearance_ambiguity_margin=float(self.appearance_ambiguity_margin) if self.appearance_ambiguity_margin is not None else None,
+            appearance_all_valid=bool(self.appearance_all_valid) if self.appearance_all_valid is not None else None,
             appearance_feature_mode=str(self.appearance_feature_mode) if self.appearance_feature_mode is not None else None,
             appearance_hist_bins=tuple(int(value) for value in self.appearance_hist_bins) if self.appearance_hist_bins is not None else None,
             appearance_min_box_size=int(self.appearance_min_box_size) if self.appearance_min_box_size is not None else None,
@@ -171,6 +227,20 @@ class MOTTrackingEvalConfig:
             appearance_reid_weights=resolve_path(self.appearance_reid_weights) if self.appearance_reid_weights else None,
             appearance_reid_device=str(self.appearance_reid_device) if self.appearance_reid_device is not None else None,
             appearance_reid_input_size=tuple(int(value) for value in self.appearance_reid_input_size) if self.appearance_reid_input_size is not None else None,
+            appearance_reid_flip_aug=bool(self.appearance_reid_flip_aug) if self.appearance_reid_flip_aug is not None else None,
+            track_stability_weight=float(self.track_stability_weight) if self.track_stability_weight is not None else None,
+            motion_gate_enabled=bool(self.motion_gate_enabled) if self.motion_gate_enabled is not None else None,
+            motion_gate_thresh=float(self.motion_gate_thresh) if self.motion_gate_thresh is not None else None,
+            crowd_boost_enabled=bool(self.crowd_boost_enabled) if self.crowd_boost_enabled is not None else None,
+            crowd_boost_det_count=int(self.crowd_boost_det_count) if self.crowd_boost_det_count is not None else None,
+            crowd_match_thresh=float(self.crowd_match_thresh) if self.crowd_match_thresh is not None else None,
+            crowd_low_match_thresh=float(self.crowd_low_match_thresh) if self.crowd_low_match_thresh is not None else None,
+            crowd_new_track_confirm_frames=int(self.crowd_new_track_confirm_frames) if self.crowd_new_track_confirm_frames is not None else None,
+            crowd_appearance_weight=float(self.crowd_appearance_weight) if self.crowd_appearance_weight is not None else None,
+            crowd_track_stability_weight=float(self.crowd_track_stability_weight) if self.crowd_track_stability_weight is not None else None,
+            crowd_boost_min_small_ratio=float(self.crowd_boost_min_small_ratio) if self.crowd_boost_min_small_ratio is not None else None,
+            crowd_boost_max_median_area_ratio=float(self.crowd_boost_max_median_area_ratio) if self.crowd_boost_max_median_area_ratio is not None else None,
+            crowd_boost_small_area_ratio_thresh=float(self.crowd_boost_small_area_ratio_thresh) if self.crowd_boost_small_area_ratio_thresh is not None else None,
         )
 
 
@@ -218,6 +288,7 @@ class AvenueValidationConfig:
     appearance_enabled: bool = False
     appearance_weight: float = 0.25
     appearance_ambiguity_margin: float = 0.05
+    appearance_all_valid: bool = False
     appearance_feature_mode: str = "hsv"
     appearance_hist_bins: tuple[int, int, int] = (8, 4, 4)
     appearance_min_box_size: int = 16
@@ -225,6 +296,18 @@ class AvenueValidationConfig:
     appearance_reid_weights: Path | None = None
     appearance_reid_device: str | None = None
     appearance_reid_input_size: tuple[int, int] = (256, 128)
+    appearance_reid_flip_aug: bool = False
+    motion_gate_enabled: bool = False
+    motion_gate_thresh: float = 9.4877
+    crowd_boost_enabled: bool = False
+    crowd_boost_det_count: int = 12
+    crowd_match_thresh: float | None = None
+    crowd_low_match_thresh: float | None = None
+    crowd_appearance_weight: float | None = None
+    crowd_track_stability_weight: float | None = None
+    crowd_boost_min_small_ratio: float | None = None
+    crowd_boost_max_median_area_ratio: float | None = None
+    crowd_boost_small_area_ratio_thresh: float = 0.002
     behavior_mode: str = "rules"
     behavior_model_path: Path | None = None
     behavior_secondary_model_path: Path | None = None
@@ -247,6 +330,11 @@ class AvenueValidationConfig:
     loitering_support_activate_frames: int = 0
     loitering_support_block_running: bool = False
     loitering_context_gate_support_only: bool = False
+    running_loitering_arb_enabled: bool = False
+    running_loitering_min_loitering_score: float = 0.72
+    running_loitering_min_stationary_ratio: float = 0.90
+    running_loitering_max_movement_extent: float = 50.0
+    running_loitering_max_p90_speed: float = 3.0
     loitering_release_frames: int = 1
     loitering_model_max_avg_speed: float = 2.2
     loitering_model_min_movement_extent: float = 0.0
@@ -309,6 +397,7 @@ class AvenueValidationConfig:
             appearance_enabled=bool(self.appearance_enabled),
             appearance_weight=float(self.appearance_weight),
             appearance_ambiguity_margin=float(self.appearance_ambiguity_margin),
+            appearance_all_valid=bool(self.appearance_all_valid),
             appearance_feature_mode=str(self.appearance_feature_mode),
             appearance_hist_bins=tuple(int(value) for value in self.appearance_hist_bins),
             appearance_min_box_size=int(self.appearance_min_box_size),
@@ -316,6 +405,18 @@ class AvenueValidationConfig:
             appearance_reid_weights=resolve_path(self.appearance_reid_weights) if self.appearance_reid_weights else None,
             appearance_reid_device=str(self.appearance_reid_device) if self.appearance_reid_device is not None else None,
             appearance_reid_input_size=tuple(int(value) for value in self.appearance_reid_input_size),
+            appearance_reid_flip_aug=bool(self.appearance_reid_flip_aug),
+            motion_gate_enabled=bool(self.motion_gate_enabled),
+            motion_gate_thresh=float(self.motion_gate_thresh),
+            crowd_boost_enabled=bool(self.crowd_boost_enabled),
+            crowd_boost_det_count=int(self.crowd_boost_det_count),
+            crowd_match_thresh=float(self.crowd_match_thresh) if self.crowd_match_thresh is not None else None,
+            crowd_low_match_thresh=float(self.crowd_low_match_thresh) if self.crowd_low_match_thresh is not None else None,
+            crowd_appearance_weight=float(self.crowd_appearance_weight) if self.crowd_appearance_weight is not None else None,
+            crowd_track_stability_weight=float(self.crowd_track_stability_weight) if self.crowd_track_stability_weight is not None else None,
+            crowd_boost_min_small_ratio=float(self.crowd_boost_min_small_ratio) if self.crowd_boost_min_small_ratio is not None else None,
+            crowd_boost_max_median_area_ratio=float(self.crowd_boost_max_median_area_ratio) if self.crowd_boost_max_median_area_ratio is not None else None,
+            crowd_boost_small_area_ratio_thresh=float(self.crowd_boost_small_area_ratio_thresh),
             behavior_mode=str(self.behavior_mode),
             behavior_model_path=resolve_path(self.behavior_model_path) if self.behavior_model_path else None,
             behavior_secondary_model_path=resolve_path(self.behavior_secondary_model_path) if self.behavior_secondary_model_path else None,
@@ -338,6 +439,11 @@ class AvenueValidationConfig:
             loitering_support_activate_frames=int(self.loitering_support_activate_frames),
             loitering_support_block_running=bool(self.loitering_support_block_running),
             loitering_context_gate_support_only=bool(self.loitering_context_gate_support_only),
+            running_loitering_arb_enabled=bool(self.running_loitering_arb_enabled),
+            running_loitering_min_loitering_score=float(self.running_loitering_min_loitering_score),
+            running_loitering_min_stationary_ratio=float(self.running_loitering_min_stationary_ratio),
+            running_loitering_max_movement_extent=float(self.running_loitering_max_movement_extent),
+            running_loitering_max_p90_speed=float(self.running_loitering_max_p90_speed),
             loitering_release_frames=int(self.loitering_release_frames),
             loitering_model_max_avg_speed=float(self.loitering_model_max_avg_speed),
             loitering_model_min_movement_extent=float(self.loitering_model_min_movement_extent),
@@ -373,6 +479,28 @@ class AvenueValidationConfig:
             running_frames=int(self.running_frames),
             max_videos=int(self.max_videos) if self.max_videos is not None else None,
             sequence_ids=tuple(str(item).zfill(2) for item in self.sequence_ids),
+            save_demo_frames=bool(self.save_demo_frames),
+            demo_dir=resolve_path(self.demo_dir),
+        )
+
+
+@dataclass(slots=True)
+class UBnormalValidationConfig:
+    manifest_path: Path = field(default_factory=lambda: resolve_path("data/processed/ubnormal_official/manifests/test.jsonl"))
+    config_path: Path = field(default_factory=lambda: resolve_path("config.yaml"))
+    output_path: Path = field(default_factory=lambda: resolve_path("output/ubnormal/validation_report.json"))
+    max_videos: int | None = None
+    sequence_ids: tuple[str, ...] = ()
+    save_demo_frames: bool = False
+    demo_dir: Path = field(default_factory=lambda: resolve_path("output/ubnormal/demo"))
+
+    def resolved(self) -> "UBnormalValidationConfig":
+        return UBnormalValidationConfig(
+            manifest_path=resolve_path(self.manifest_path),
+            config_path=resolve_path(self.config_path),
+            output_path=resolve_path(self.output_path),
+            max_videos=int(self.max_videos) if self.max_videos is not None else None,
+            sequence_ids=tuple(str(item) for item in self.sequence_ids),
             save_demo_frames=bool(self.save_demo_frames),
             demo_dir=resolve_path(self.demo_dir),
         )
@@ -541,4 +669,80 @@ class BehaviorClassifierTrainConfig:
             hidden_dims=tuple(int(value) for value in self.hidden_dims),
             dropout=float(self.dropout),
             patience=int(self.patience),
+        )
+
+
+@dataclass(slots=True)
+class BehaviorModelEvalConfig:
+    checkpoint_path: Path = field(default_factory=lambda: resolve_path("output/behavior_training/best.pt"))
+    dataset_path: Path = field(default_factory=lambda: resolve_path("output/avenue_pseudo_labels/tracks.jsonl"))
+    output_path: Path = field(default_factory=lambda: resolve_path("output/behavior_eval/report.json"))
+    device: str | int | None = None
+    loitering_min_score: float | None = 0.595
+    running_min_score: float | None = None
+    running_loitering_arb_enabled: bool = True
+    running_loitering_min_loitering_score: float = 0.695
+    running_loitering_min_stationary_ratio: float = 0.88
+    running_loitering_max_movement_extent: float = 55.0
+    running_loitering_max_p90_speed: float = 3.0
+    loitering_borderline_gate_enabled: bool = True
+    loitering_borderline_gate_max_score: float = 0.76
+    loitering_borderline_gate_min_stationary_ratio: float = 0.70
+    loitering_borderline_gate_max_movement_extent: float = 70.0
+    loitering_borderline_gate_max_p90_speed: float = 4.0
+    loitering_borderline_gate_min_revisit_ratio: float = 0.88
+    running_borderline_gate_enabled: bool = True
+    running_borderline_gate_max_score: float = 0.75
+    running_borderline_gate_min_stationary_ratio: float = 0.80
+    running_borderline_gate_max_movement_extent: float = 20.0
+    running_borderline_gate_max_p90_speed: float = 2.0
+    quality_adaptive_loitering_enabled: bool = True
+    quality_adaptive_loitering_long_track_frames: float = 90.0
+    quality_adaptive_loitering_long_track_max_score: float = 0.82
+    quality_adaptive_loitering_long_track_min_revisit_ratio: float = 0.88
+    source_aware_running_gate_enabled: bool = False
+    source_aware_rswacv_running_max_score: float = 0.68
+    source_aware_rswacv_running_max_movement_extent: float = 10.0
+    source_aware_rswacv_running_max_p90_speed: float = 1.5
+
+    def resolved(self) -> "BehaviorModelEvalConfig":
+        return BehaviorModelEvalConfig(
+            checkpoint_path=resolve_path(self.checkpoint_path),
+            dataset_path=resolve_path(self.dataset_path),
+            output_path=resolve_path(self.output_path),
+            device=self.device,
+            loitering_min_score=(
+                float(self.loitering_min_score)
+                if self.loitering_min_score is not None
+                else None
+            ),
+            running_min_score=(
+                float(self.running_min_score)
+                if self.running_min_score is not None
+                else None
+            ),
+            running_loitering_arb_enabled=bool(self.running_loitering_arb_enabled),
+            running_loitering_min_loitering_score=float(self.running_loitering_min_loitering_score),
+            running_loitering_min_stationary_ratio=float(self.running_loitering_min_stationary_ratio),
+            running_loitering_max_movement_extent=float(self.running_loitering_max_movement_extent),
+            running_loitering_max_p90_speed=float(self.running_loitering_max_p90_speed),
+            loitering_borderline_gate_enabled=bool(self.loitering_borderline_gate_enabled),
+            loitering_borderline_gate_max_score=float(self.loitering_borderline_gate_max_score),
+            loitering_borderline_gate_min_stationary_ratio=float(self.loitering_borderline_gate_min_stationary_ratio),
+            loitering_borderline_gate_max_movement_extent=float(self.loitering_borderline_gate_max_movement_extent),
+            loitering_borderline_gate_max_p90_speed=float(self.loitering_borderline_gate_max_p90_speed),
+            loitering_borderline_gate_min_revisit_ratio=float(self.loitering_borderline_gate_min_revisit_ratio),
+            running_borderline_gate_enabled=bool(self.running_borderline_gate_enabled),
+            running_borderline_gate_max_score=float(self.running_borderline_gate_max_score),
+            running_borderline_gate_min_stationary_ratio=float(self.running_borderline_gate_min_stationary_ratio),
+            running_borderline_gate_max_movement_extent=float(self.running_borderline_gate_max_movement_extent),
+            running_borderline_gate_max_p90_speed=float(self.running_borderline_gate_max_p90_speed),
+            quality_adaptive_loitering_enabled=bool(self.quality_adaptive_loitering_enabled),
+            quality_adaptive_loitering_long_track_frames=float(self.quality_adaptive_loitering_long_track_frames),
+            quality_adaptive_loitering_long_track_max_score=float(self.quality_adaptive_loitering_long_track_max_score),
+            quality_adaptive_loitering_long_track_min_revisit_ratio=float(self.quality_adaptive_loitering_long_track_min_revisit_ratio),
+            source_aware_running_gate_enabled=bool(self.source_aware_running_gate_enabled),
+            source_aware_rswacv_running_max_score=float(self.source_aware_rswacv_running_max_score),
+            source_aware_rswacv_running_max_movement_extent=float(self.source_aware_rswacv_running_max_movement_extent),
+            source_aware_rswacv_running_max_p90_speed=float(self.source_aware_rswacv_running_max_p90_speed),
         )

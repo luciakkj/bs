@@ -18,6 +18,7 @@ class ModelConfig:
     device: str | int | None = None
     imgsz: int | None = None
     max_det: int | None = None
+    nms_iou: float | None = None
     half: bool = False
     augment: bool = False
     runtime_profile: str = "balanced"
@@ -31,6 +32,7 @@ class TrackerConfig:
     track_high_thresh: float = 0.5
     track_low_thresh: float = 0.1
     new_track_thresh: float = 0.6
+    new_track_confirm_frames: int = 1
     match_thresh: float = 0.8
     low_match_thresh: float = 0.5
     unconfirmed_match_thresh: float = 0.7
@@ -40,6 +42,7 @@ class TrackerConfig:
     appearance_enabled: bool = False
     appearance_weight: float = 0.25
     appearance_ambiguity_margin: float = 0.05
+    appearance_all_valid: bool = False
     appearance_feature_mode: str = "hsv"
     appearance_hist_bins: Tuple[int, int, int] = (8, 4, 4)
     appearance_min_box_size: int = 16
@@ -47,6 +50,20 @@ class TrackerConfig:
     appearance_reid_weights: str = ""
     appearance_reid_device: str = ""
     appearance_reid_input_size: Tuple[int, int] = (256, 128)
+    appearance_reid_flip_aug: bool = False
+    track_stability_weight: float = 0.0
+    motion_gate_enabled: bool = False
+    motion_gate_thresh: float = 9.4877
+    crowd_boost_enabled: bool = False
+    crowd_boost_det_count: int = 12
+    crowd_match_thresh: float | None = None
+    crowd_low_match_thresh: float | None = None
+    crowd_new_track_confirm_frames: int | None = None
+    crowd_appearance_weight: float | None = None
+    crowd_track_stability_weight: float | None = None
+    crowd_boost_min_small_ratio: float | None = None
+    crowd_boost_max_median_area_ratio: float | None = None
+    crowd_boost_small_area_ratio_thresh: float = 0.002
 
 
 @dataclass
@@ -86,6 +103,11 @@ class BehaviorConfig:
     loitering_support_activate_frames: int = 0
     loitering_support_block_running: bool = False
     loitering_context_gate_support_only: bool = False
+    running_loitering_arb_enabled: bool = False
+    running_loitering_min_loitering_score: float = 0.72
+    running_loitering_min_stationary_ratio: float = 0.90
+    running_loitering_max_movement_extent: float = 50.0
+    running_loitering_max_p90_speed: float = 3.0
     loitering_release_frames: int = 1
     loitering_model_max_avg_speed: float = 2.2
     loitering_model_min_movement_extent: float = 0.0
