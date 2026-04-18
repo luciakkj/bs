@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from tracker.cmc import ECCMotionCompensator
 from tracker.kalman_filter import KalmanFilterXYAH
 from tracker.reid_encoder import ReIDFeatureExtractor
 
@@ -323,6 +324,11 @@ class ByteTrackerLite:
         crowd_boost_min_small_ratio=None,
         crowd_boost_max_median_area_ratio=None,
         crowd_boost_small_area_ratio_thresh=0.002,
+        cmc_enabled=False,
+        cmc_motion_model="affine",
+        cmc_ecc_iterations=50,
+        cmc_ecc_eps=1e-4,
+        cmc_downscale=1.0,
     ):
         self.track_high_thresh = float(track_high_thresh)
         self.track_low_thresh = float(track_low_thresh)
@@ -396,6 +402,13 @@ class ByteTrackerLite:
         )
         self.crowd_boost_small_area_ratio_thresh = float(max(1e-6, crowd_boost_small_area_ratio_thresh))
         self.reid_encoder = None
+        self.motion_compensator = ECCMotionCompensator(
+            enabled=cmc_enabled,
+            motion_model=cmc_motion_model,
+            ecc_iterations=cmc_ecc_iterations,
+            ecc_eps=cmc_ecc_eps,
+            downscale=cmc_downscale,
+        )
 
         self.kalman_filter = KalmanFilterXYAH()
         self.frame_id = 0
@@ -701,6 +714,12 @@ class ByteTrackerLite:
                 unconfirmed.append(track)
 
         strack_pool = joint_stracks(tracked_stracks, self.lost_stracks)
+        warp_matrix = self.motion_compensator.estimate(frame)
+        if warp_matrix is not None:
+            for track in strack_pool:
+                self.motion_compensator.apply(track, warp_matrix)
+            for track in unconfirmed:
+                self.motion_compensator.apply(track, warp_matrix)
         STrack.multi_predict(strack_pool)
 
         dists = iou_distance(strack_pool, high_score_detections)

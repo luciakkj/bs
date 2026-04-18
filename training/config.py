@@ -15,67 +15,11 @@ def resolve_path(path_like: str | Path) -> Path:
 
 
 @dataclass(slots=True)
-class PrepareConfig:
-    mot_root: Path = field(default_factory=lambda: resolve_path("data/MOT17"))
-    output_dir: Path = field(default_factory=lambda: resolve_path("data/processed/mot17_person"))
-    split_name: str = "train"
-    detector_filter: str | None = "FRCNN"
-    include_classes: tuple[int, ...] = (1,)
-    min_visibility: float = 0.25
-    val_ratio: float = 0.25
-    val_sequences: tuple[str, ...] = ()
-    overwrite: bool = False
-    dense_small_repeat_factor: int = 1
-    dense_small_max_repeat_frames: int | None = None
-    dense_small_min_gt_count: int = 12
-    dense_small_min_small_ratio: float = 0.7
-    dense_small_max_median_area_ratio: float = 0.002
-    small_box_area_ratio_thresh: float = 0.002
-    dense_small_crop_enable: bool = False
-    dense_small_crop_max_frames: int | None = None
-    dense_small_crop_width_ratio: float = 0.5
-    dense_small_crop_height_ratio: float = 0.5
-    dense_small_crop_min_boxes: int = 6
-
-    def resolved(self) -> "PrepareConfig":
-        return PrepareConfig(
-            mot_root=resolve_path(self.mot_root),
-            output_dir=resolve_path(self.output_dir),
-            split_name=self.split_name,
-            detector_filter=self.detector_filter,
-            include_classes=tuple(self.include_classes),
-            min_visibility=float(self.min_visibility),
-            val_ratio=float(self.val_ratio),
-            val_sequences=tuple(self.val_sequences),
-            overwrite=bool(self.overwrite),
-            dense_small_repeat_factor=max(1, int(self.dense_small_repeat_factor)),
-            dense_small_max_repeat_frames=(
-                max(1, int(self.dense_small_max_repeat_frames))
-                if self.dense_small_max_repeat_frames is not None
-                else None
-            ),
-            dense_small_min_gt_count=max(1, int(self.dense_small_min_gt_count)),
-            dense_small_min_small_ratio=float(self.dense_small_min_small_ratio),
-            dense_small_max_median_area_ratio=float(self.dense_small_max_median_area_ratio),
-            small_box_area_ratio_thresh=float(self.small_box_area_ratio_thresh),
-            dense_small_crop_enable=bool(self.dense_small_crop_enable),
-            dense_small_crop_max_frames=(
-                max(1, int(self.dense_small_crop_max_frames))
-                if self.dense_small_crop_max_frames is not None
-                else None
-            ),
-            dense_small_crop_width_ratio=float(self.dense_small_crop_width_ratio),
-            dense_small_crop_height_ratio=float(self.dense_small_crop_height_ratio),
-            dense_small_crop_min_boxes=max(1, int(self.dense_small_crop_min_boxes)),
-        )
-
-
-@dataclass(slots=True)
 class TrainConfig:
-    data: Path = field(default_factory=lambda: resolve_path("data/processed/mot17_person/mot17_person.yaml"))
+    data: Path = field(default_factory=lambda: resolve_path("data/processed/dancetrack_person/dancetrack_person.yaml"))
     model: Path = field(default_factory=lambda: resolve_path("models/yolov8n.pt"))
     project: Path = field(default_factory=lambda: resolve_path("output/training"))
-    name: str = "mot17_person"
+    name: str = "dancetrack_person"
     epochs: int = 50
     imgsz: int = 960
     batch: int = 8
@@ -100,7 +44,7 @@ class TrainConfig:
 
 @dataclass(slots=True)
 class ValidateConfig:
-    data: Path = field(default_factory=lambda: resolve_path("data/processed/mot17_person/mot17_person.yaml"))
+    data: Path = field(default_factory=lambda: resolve_path("data/processed/dancetrack_person/dancetrack_person.yaml"))
     weights: Path = field(default_factory=lambda: resolve_path("models/yolov8n.pt"))
     imgsz: int = 960
     batch: int = 8
@@ -123,11 +67,11 @@ class ValidateConfig:
 @dataclass(slots=True)
 class MOTTrackingEvalConfig:
     config_path: Path = field(default_factory=lambda: resolve_path("config.yaml"))
-    mot_root: Path = field(default_factory=lambda: resolve_path("data/MOT17"))
-    output_path: Path = field(default_factory=lambda: resolve_path("output/tracking/mot17_tracking_eval.json"))
-    save_mot_dir: Path | None = field(default_factory=lambda: resolve_path("output/tracking/mot17_tracking_eval_tracks"))
-    split_name: str = "train"
-    detector_filter: str | None = "FRCNN"
+    mot_root: Path = field(default_factory=lambda: resolve_path("data/external/dancetrack"))
+    output_path: Path = field(default_factory=lambda: resolve_path("output/tracking/dancetrack_tracking_eval.json"))
+    save_mot_dir: Path | None = field(default_factory=lambda: resolve_path("output/tracking/dancetrack_tracking_eval_tracks"))
+    split_name: str = "val"
+    detector_filter: str | None = None
     sequence_names: tuple[str, ...] = ()
     sequence_runtime_overrides_path: Path | None = None
     include_classes: tuple[int, ...] = (1,)
@@ -178,6 +122,19 @@ class MOTTrackingEvalConfig:
     crowd_boost_min_small_ratio: float | None = None
     crowd_boost_max_median_area_ratio: float | None = None
     crowd_boost_small_area_ratio_thresh: float | None = None
+    cmc_enabled: bool | None = None
+    cmc_motion_model: str | None = None
+    cmc_ecc_iterations: int | None = None
+    cmc_ecc_eps: float | None = None
+    cmc_downscale: float | None = None
+    aflink_enabled: bool | None = None
+    aflink_max_gap: int | None = None
+    aflink_max_center_dist: float | None = None
+    aflink_max_scale_ratio: float | None = None
+    aflink_min_track_length: int | None = None
+    gsi_enabled: bool | None = None
+    gsi_max_gap: int | None = None
+    gsi_sigma: float | None = None
 
     def resolved(self) -> "MOTTrackingEvalConfig":
         return MOTTrackingEvalConfig(
@@ -241,26 +198,19 @@ class MOTTrackingEvalConfig:
             crowd_boost_min_small_ratio=float(self.crowd_boost_min_small_ratio) if self.crowd_boost_min_small_ratio is not None else None,
             crowd_boost_max_median_area_ratio=float(self.crowd_boost_max_median_area_ratio) if self.crowd_boost_max_median_area_ratio is not None else None,
             crowd_boost_small_area_ratio_thresh=float(self.crowd_boost_small_area_ratio_thresh) if self.crowd_boost_small_area_ratio_thresh is not None else None,
-        )
-
-
-@dataclass(slots=True)
-class CalibrationConfig:
-    mot_root: Path = field(default_factory=lambda: resolve_path("data/MOT17"))
-    output_path: Path = field(default_factory=lambda: resolve_path("output/calibration/behavior_thresholds.json"))
-    split_name: str = "train"
-    detector_filter: str | None = "FRCNN"
-    include_classes: tuple[int, ...] = (1,)
-    min_visibility: float = 0.25
-
-    def resolved(self) -> "CalibrationConfig":
-        return CalibrationConfig(
-            mot_root=resolve_path(self.mot_root),
-            output_path=resolve_path(self.output_path),
-            split_name=self.split_name,
-            detector_filter=self.detector_filter,
-            include_classes=tuple(self.include_classes),
-            min_visibility=float(self.min_visibility),
+            cmc_enabled=bool(self.cmc_enabled) if self.cmc_enabled is not None else None,
+            cmc_motion_model=str(self.cmc_motion_model) if self.cmc_motion_model is not None else None,
+            cmc_ecc_iterations=int(self.cmc_ecc_iterations) if self.cmc_ecc_iterations is not None else None,
+            cmc_ecc_eps=float(self.cmc_ecc_eps) if self.cmc_ecc_eps is not None else None,
+            cmc_downscale=float(self.cmc_downscale) if self.cmc_downscale is not None else None,
+            aflink_enabled=bool(self.aflink_enabled) if self.aflink_enabled is not None else None,
+            aflink_max_gap=int(self.aflink_max_gap) if self.aflink_max_gap is not None else None,
+            aflink_max_center_dist=float(self.aflink_max_center_dist) if self.aflink_max_center_dist is not None else None,
+            aflink_max_scale_ratio=float(self.aflink_max_scale_ratio) if self.aflink_max_scale_ratio is not None else None,
+            aflink_min_track_length=int(self.aflink_min_track_length) if self.aflink_min_track_length is not None else None,
+            gsi_enabled=bool(self.gsi_enabled) if self.gsi_enabled is not None else None,
+            gsi_max_gap=int(self.gsi_max_gap) if self.gsi_max_gap is not None else None,
+            gsi_sigma=float(self.gsi_sigma) if self.gsi_sigma is not None else None,
         )
 
 
@@ -675,9 +625,13 @@ class BehaviorClassifierTrainConfig:
 @dataclass(slots=True)
 class BehaviorModelEvalConfig:
     checkpoint_path: Path = field(default_factory=lambda: resolve_path("output/behavior_training/best.pt"))
+    secondary_checkpoint_path: Path | None = None
     dataset_path: Path = field(default_factory=lambda: resolve_path("output/avenue_pseudo_labels/tracks.jsonl"))
     output_path: Path = field(default_factory=lambda: resolve_path("output/behavior_eval/report.json"))
     device: str | int | None = None
+    ensemble_primary_weight: float = 1.0
+    ensemble_mode: str = "weighted"
+    ensemble_loitering_boost: float = 1.0
     loitering_min_score: float | None = 0.595
     running_min_score: float | None = None
     running_loitering_arb_enabled: bool = True
@@ -686,11 +640,13 @@ class BehaviorModelEvalConfig:
     running_loitering_max_movement_extent: float = 55.0
     running_loitering_max_p90_speed: float = 3.0
     loitering_borderline_gate_enabled: bool = True
-    loitering_borderline_gate_max_score: float = 0.76
+    loitering_borderline_gate_max_score: float = 0.74
     loitering_borderline_gate_min_stationary_ratio: float = 0.70
     loitering_borderline_gate_max_movement_extent: float = 70.0
     loitering_borderline_gate_max_p90_speed: float = 4.0
     loitering_borderline_gate_min_revisit_ratio: float = 0.88
+    loitering_borderline_gate_max_straightness: float = 0.95
+    loitering_borderline_gate_max_centroid_radius: float = 30.0
     running_borderline_gate_enabled: bool = True
     running_borderline_gate_max_score: float = 0.75
     running_borderline_gate_min_stationary_ratio: float = 0.80
@@ -708,9 +664,13 @@ class BehaviorModelEvalConfig:
     def resolved(self) -> "BehaviorModelEvalConfig":
         return BehaviorModelEvalConfig(
             checkpoint_path=resolve_path(self.checkpoint_path),
+            secondary_checkpoint_path=resolve_path(self.secondary_checkpoint_path) if self.secondary_checkpoint_path else None,
             dataset_path=resolve_path(self.dataset_path),
             output_path=resolve_path(self.output_path),
             device=self.device,
+            ensemble_primary_weight=float(self.ensemble_primary_weight),
+            ensemble_mode=str(self.ensemble_mode),
+            ensemble_loitering_boost=float(self.ensemble_loitering_boost),
             loitering_min_score=(
                 float(self.loitering_min_score)
                 if self.loitering_min_score is not None
@@ -732,6 +692,8 @@ class BehaviorModelEvalConfig:
             loitering_borderline_gate_max_movement_extent=float(self.loitering_borderline_gate_max_movement_extent),
             loitering_borderline_gate_max_p90_speed=float(self.loitering_borderline_gate_max_p90_speed),
             loitering_borderline_gate_min_revisit_ratio=float(self.loitering_borderline_gate_min_revisit_ratio),
+            loitering_borderline_gate_max_straightness=float(self.loitering_borderline_gate_max_straightness),
+            loitering_borderline_gate_max_centroid_radius=float(self.loitering_borderline_gate_max_centroid_radius),
             running_borderline_gate_enabled=bool(self.running_borderline_gate_enabled),
             running_borderline_gate_max_score=float(self.running_borderline_gate_max_score),
             running_borderline_gate_min_stationary_ratio=float(self.running_borderline_gate_min_stationary_ratio),

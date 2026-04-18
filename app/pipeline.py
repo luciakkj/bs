@@ -108,6 +108,11 @@ class VideoAnalyticsPipeline:
             crowd_boost_min_small_ratio=cfg.tracker.crowd_boost_min_small_ratio,
             crowd_boost_max_median_area_ratio=cfg.tracker.crowd_boost_max_median_area_ratio,
             crowd_boost_small_area_ratio_thresh=cfg.tracker.crowd_boost_small_area_ratio_thresh,
+            cmc_enabled=cfg.tracker.cmc_enabled,
+            cmc_motion_model=cfg.tracker.cmc_motion_model,
+            cmc_ecc_iterations=cfg.tracker.cmc_ecc_iterations,
+            cmc_ecc_eps=cfg.tracker.cmc_ecc_eps,
+            cmc_downscale=cfg.tracker.cmc_downscale,
         )
         self.behavior = AbnormalDetector(
             roi=cfg.behavior.roi,
@@ -221,7 +226,7 @@ class VideoAnalyticsPipeline:
         if self.source_type == "video":
             return Path(self.cfg.source.video_path).name
 
-        seq_path = Path(self.cfg.source.mot17_seq)
+        seq_path = Path(self.cfg.source.image_sequence_path)
         parts = seq_path.parts
         if "img1" in parts:
             img1_index = parts.index("img1")
@@ -247,7 +252,7 @@ class VideoAnalyticsPipeline:
                 "use_camera": self.cfg.source.use_camera,
                 "camera_id": self.cfg.source.camera_id,
                 "video_path": self.cfg.source.video_path,
-                "mot17_seq": self.cfg.source.mot17_seq,
+                "image_sequence_path": self.cfg.source.image_sequence_path,
             },
             "model": {
                 "model_path": self.cfg.model.model_path,
@@ -392,7 +397,7 @@ class VideoAnalyticsPipeline:
         elif self.cfg.source.video_path:
             return cv2.VideoCapture(self.cfg.source.video_path)
         else:
-            return cv2.VideoCapture(self.cfg.source.mot17_seq)
+            return cv2.VideoCapture(self.cfg.source.image_sequence_path)
 
     def _resolve_export_fps(self, cap):
         configured_fps = float(getattr(self.cfg.output, "video_export_fps", 0.0) or 0.0)

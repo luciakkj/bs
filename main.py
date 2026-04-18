@@ -57,7 +57,14 @@ def _ask_input_source() -> tuple[str | None, str | None]:
         img1_dir = path / "img1"
         if img1_dir.is_dir():
             candidate_dirs.insert(0, img1_dir)
-        seq_path = next((directory / "%06d.jpg" for directory in candidate_dirs if next(directory.glob("*.jpg"), None)), None)
+        seq_path = None
+        for directory in candidate_dirs:
+            first_image = next(directory.glob("*.jpg"), None)
+            if first_image is None:
+                continue
+            digits = max(1, len(first_image.stem))
+            seq_path = directory / f"%0{digits}d{first_image.suffix.lower()}"
+            break
         if seq_path is None:
             print(f"No jpg image sequence found. Continue with config source: {path}")
             return None, None
@@ -81,11 +88,11 @@ def main() -> None:
     if source_type == "video":
         cfg.source.use_camera = False
         cfg.source.video_path = source_path
-        cfg.source.mot17_seq = ""
+        cfg.source.image_sequence_path = ""
     elif source_type == "image_sequence":
         cfg.source.use_camera = False
         cfg.source.video_path = ""
-        cfg.source.mot17_seq = source_path
+        cfg.source.image_sequence_path = source_path
 
     app = VideoAnalyticsPipeline(cfg)
     app.run()

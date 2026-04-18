@@ -5,7 +5,7 @@ This project follows the graduation-topic requirements for an intelligent video 
 - YOLO-based person detection
 - ByteTrack-style lightweight multi-object tracking
 - Trajectory-based abnormal behavior analysis
-- Training-first workflow built on MOT17
+- Training-first workflow built on DanceTrack and external behavior datasets
 
 The current priority is the model training module. A UI is intentionally not included yet.
 
@@ -15,11 +15,10 @@ The current priority is the model training module. A UI is intentionally not inc
 - `behavior/`: intrusion, cross-line, loitering, and running detection
 - `detector/`: YOLO detector wrapper
 - `tracker/`: ByteTrack-style tracker with Kalman prediction and two-stage association
-- `training/`: dataset preparation, training, validation, and behavior-threshold calibration
-- `data/MOT17/`: raw MOT17 dataset
-- `data/processed/mot17_person/`: generated YOLO-format dataset
+- `training/`: detector training, tracking evaluation, and behavior-model utilities
+- `data/external/dancetrack/`: raw DanceTrack dataset
+- `data/processed/dancetrack_person/`: generated YOLO-format detection dataset
 - `output/training/`: detector training outputs
-- `output/calibration/`: behavior calibration outputs
 
 ## Environment
 
@@ -37,57 +36,35 @@ venv\Scripts\python.exe
 
 ## Training Workflow
 
-### 1. Prepare MOT17 for YOLO
+### 1. Train the detector
 
 ```powershell
-venv\Scripts\python.exe train.py prepare --overwrite
+venv\Scripts\python.exe train.py train --epochs 50 --imgsz 640 --batch 8
 ```
 
-This command:
+By default this command trains on `data/processed/dancetrack_person/dancetrack_person.yaml`.
 
-- reads `data/MOT17/train`
-- keeps `FRCNN` sequences by default to avoid triple-duplicating the same scene
-- converts pedestrian annotations into a single `person` class
-- creates a YOLO dataset under `data/processed/mot17_person`
-
-### 2. Calibrate behavior thresholds
+### 2. Validate the detector
 
 ```powershell
-venv\Scripts\python.exe train.py calibrate
+venv\Scripts\python.exe train.py validate --weights output\training\dancetrack_person\weights\best.pt
 ```
 
-This writes `output/calibration/behavior_thresholds.json` with suggested values for:
-
-- `loiter_frames`
-- `loiter_radius`
-- `loiter_speed`
-- `running_speed`
-
-Because MOT17 does not contain explicit abnormal-event labels, this step is calibration rather than supervised behavior training.
-
-### 3. Train the detector
+### 3. Evaluate tracking
 
 ```powershell
-venv\Scripts\python.exe train.py train --epochs 50 --imgsz 960 --batch 8
+venv\Scripts\python.exe train.py eval-mot-tracking --config-path config_tracking_dancetrack.yaml --mot-root data\external\dancetrack --split-name val
 ```
 
-Output weights are saved under `output/training/mot17_person/weights/`.
+This command evaluates detector + tracker performance on DanceTrack with MOT-style metrics such as `MOTA`, `IDF1`, and `ID Switches`.
 
-### 4. Validate the detector
-
-```powershell
-venv\Scripts\python.exe train.py validate --weights output\training\mot17_person\weights\best.pt
-```
-
-### 5. Validate anomaly behavior on CUHK Avenue
+### 4. Validate anomaly behavior on CUHK Avenue
 
 ```powershell
 venv\Scripts\python.exe train.py validate-avenue --model models\yolov8n.pt --enable-loitering --enable-running --max-videos 1
 ```
 
-This command runs detection, tracking, and rule-based anomaly logic on CUHK Avenue and compares predicted anomalous frames against Avenue anomaly masks.
-
-### 6. Generate track-level pseudo labels from CUHK Avenue
+### 5. Generate track-level pseudo labels from CUHK Avenue
 
 ```powershell
 venv\Scripts\python.exe train.py generate-avenue-pseudo-labels --model models\yolov8n.pt --device 0
@@ -102,7 +79,7 @@ This command uses Avenue testing videos plus anomaly masks to generate track-lev
 
 Outputs are saved under `output/avenue_pseudo_labels/` as JSONL manifests and a `summary.json` report.
 
-### 7. Train a lightweight behavior classifier
+### 6. Train a lightweight behavior classifier
 
 ```powershell
 venv\Scripts\python.exe train.py train-behavior --dataset-path output\avenue_pseudo_labels\tracks.jsonl --device 0
@@ -112,7 +89,7 @@ This trains a small MLP on trajectory-level features using the pseudo labels gen
 
 Artifacts are saved under `output/behavior_training/`.
 
-### 8. Expand behavior pseudo labels
+### 7. Expand behavior pseudo labels
 
 ```powershell
 venv\Scripts\python.exe train.py expand-behavior-dataset --input-path output\avenue_pseudo_labels\tracks.jsonl
@@ -147,6 +124,5 @@ If you want to enable the learned behavior model later, set:
 ## Notes
 
 - `ByteTrack` is an association algorithm and does not require supervised training.
-- The abnormal-behavior module is rule-based, but the thresholds are now calibratable from MOT17 trajectories.
 - `cross_line` is supported in `config.yaml`; leave it empty to disable it.
-- The tracker implementation now includes Kalman prediction, high/low score matching, and tracked/lost/removed states, which is much closer to the algorithmic flow expected in a graduation defense.
+- The tracker implementation includes Kalman prediction, high/low score matching, ReID support, and optional BoT-SORT / StrongSORT++ style add-ons.

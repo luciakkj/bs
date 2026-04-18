@@ -40,6 +40,19 @@ tracker:
   crowd_low_match_thresh: 0.445
   crowd_new_track_confirm_frames: 2
   crowd_appearance_weight: 0.49
+  cmc_enabled: false
+  cmc_motion_model: "affine"
+  cmc_ecc_iterations: 20
+  cmc_ecc_eps: 0.0005
+  cmc_downscale: 0.5
+  aflink_enabled: true
+  aflink_max_gap: 30
+  aflink_max_center_dist: 120.0
+  aflink_max_scale_ratio: 1.8
+  aflink_min_track_length: 3
+  gsi_enabled: true
+  gsi_max_gap: 5
+  gsi_sigma: 0.5
 
 behavior:
   roi: [200, 120, 500, 420]

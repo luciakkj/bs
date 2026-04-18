@@ -157,7 +157,7 @@ def mine_behavior_hard_negatives(
     *,
     avenue_root: str | Path = "data/CUHK_Avenue/Avenue Dataset",
     ground_truth_root: str | Path = "data/CUHK_Avenue/ground_truth_demo/testing_label_mask",
-    detector_model: str | Path = "output/training/mot17_person_gpu_40e_960_pretrained_w2/weights/best.pt",
+    detector_model: str | Path = "output/training/dancetrack_person_v8n_e5_640_b8_w0/weights/best.pt",
     behavior_model_path: str | Path = "output/behavior_training/avenue_behavior_mlp_seed2026/best.pt",
     input_dataset: str | Path = "output/avenue_pseudo_labels_filtered/tracks_filtered.jsonl",
     output_dir: str | Path = "output/behavior_hard_negatives",

@@ -7,7 +7,6 @@ from training.avenue_pseudo_labels import generate_avenue_pseudo_labels
 from training.avenue_validation import validate_on_avenue
 from training.ubnormal_validation import validate_on_ubnormal
 from training.avenue_behavior_windows import build_avenue_behavior_windows
-from training.behavior_calibration import calibrate_behavior_thresholds
 from training.behavior_classifier import train_behavior_classifier
 from training.behavior_dataset_expansion import expand_behavior_dataset
 from training.behavior_hard_negative_mining import mine_behavior_hard_negatives
@@ -21,13 +20,10 @@ from training.config import (
     BehaviorModelEvalConfig,
     UBnormalValidationConfig,
     BehaviorClassifierTrainConfig,
-    CalibrationConfig,
     MOTTrackingEvalConfig,
-    PrepareConfig,
     TrainConfig,
     ValidateConfig,
 )
-from training.mot_dataset import MOT17ToYOLOConverter
 from training.yolo_workflow import train_detector, validate_detector
 
 
@@ -37,39 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    prepare = subparsers.add_parser("prepare", help="Convert MOT17 annotations to YOLO training format.")
-    prepare.add_argument("--mot-root", default="data/MOT17")
-    prepare.add_argument("--output-dir", default="data/processed/mot17_person")
-    prepare.add_argument("--split-name", default="train")
-    prepare.add_argument("--detector", default="FRCNN")
-    prepare.add_argument("--min-visibility", type=float, default=0.25)
-    prepare.add_argument("--val-ratio", type=float, default=0.25)
-    prepare.add_argument("--val-sequences", nargs="*", default=[])
-    prepare.add_argument("--overwrite", action="store_true")
-    prepare.add_argument("--dense-small-repeat-factor", type=int, default=1)
-    prepare.add_argument("--dense-small-max-repeat-frames", type=int, default=None)
-    prepare.add_argument("--dense-small-min-gt-count", type=int, default=12)
-    prepare.add_argument("--dense-small-min-small-ratio", type=float, default=0.7)
-    prepare.add_argument("--dense-small-max-median-area-ratio", type=float, default=0.002)
-    prepare.add_argument("--small-box-area-ratio-thresh", type=float, default=0.002)
-    prepare.add_argument("--dense-small-crop-enable", action=argparse.BooleanOptionalAction, default=False)
-    prepare.add_argument("--dense-small-crop-max-frames", type=int, default=None)
-    prepare.add_argument("--dense-small-crop-width-ratio", type=float, default=0.5)
-    prepare.add_argument("--dense-small-crop-height-ratio", type=float, default=0.5)
-    prepare.add_argument("--dense-small-crop-min-boxes", type=int, default=6)
-
-    calibrate = subparsers.add_parser("calibrate", help="Estimate behavior thresholds from MOT17 trajectories.")
-    calibrate.add_argument("--mot-root", default="data/MOT17")
-    calibrate.add_argument("--output-path", default="output/calibration/behavior_thresholds.json")
-    calibrate.add_argument("--split-name", default="train")
-    calibrate.add_argument("--detector", default="FRCNN")
-    calibrate.add_argument("--min-visibility", type=float, default=0.25)
-
     train = subparsers.add_parser("train", help="Train a YOLO person detector.")
-    train.add_argument("--data", default="data/processed/mot17_person/mot17_person.yaml")
+    train.add_argument("--data", default="data/processed/dancetrack_person/dancetrack_person.yaml")
     train.add_argument("--model", default="models/yolov8n.pt")
     train.add_argument("--project", default="output/training")
-    train.add_argument("--name", default="mot17_person")
+    train.add_argument("--name", default="dancetrack_person")
     train.add_argument("--epochs", type=int, default=50)
     train.add_argument("--imgsz", type=int, default=960)
     train.add_argument("--batch", type=int, default=8)
@@ -77,8 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--patience", type=int, default=20)
     train.add_argument("--device", default=None)
 
-    validate = subparsers.add_parser("validate", help="Validate YOLO weights on the prepared dataset.")
-    validate.add_argument("--data", default="data/processed/mot17_person/mot17_person.yaml")
+    validate = subparsers.add_parser("validate", help="Validate YOLO weights on the prepared detection dataset.")
+    validate.add_argument("--data", default="data/processed/dancetrack_person/dancetrack_person.yaml")
     validate.add_argument("--weights", default="models/yolov8n.pt")
     validate.add_argument("--imgsz", type=int, default=960)
     validate.add_argument("--batch", type=int, default=8)
@@ -88,14 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     tracking_eval = subparsers.add_parser(
         "eval-mot-tracking",
-        help="Evaluate detector + ByteTrackLite on MOT17 with MOT-style tracking metrics.",
+        help="Evaluate detector + ByteTrackLite on DanceTrack or another MOT-style dataset.",
     )
     tracking_eval.add_argument("--config-path", default="config.yaml")
-    tracking_eval.add_argument("--mot-root", default="data/MOT17")
-    tracking_eval.add_argument("--output-path", default="output/tracking/mot17_tracking_eval.json")
-    tracking_eval.add_argument("--save-mot-dir", default="output/tracking/mot17_tracking_eval_tracks")
-    tracking_eval.add_argument("--split-name", default="train")
-    tracking_eval.add_argument("--detector", default="FRCNN")
+    tracking_eval.add_argument("--mot-root", default="data/external/dancetrack")
+    tracking_eval.add_argument("--output-path", default="output/tracking/dancetrack_tracking_eval.json")
+    tracking_eval.add_argument("--save-mot-dir", default="output/tracking/dancetrack_tracking_eval_tracks")
+    tracking_eval.add_argument("--split-name", default="val")
+    tracking_eval.add_argument("--detector", default=None)
     tracking_eval.add_argument("--sequence-names", nargs="*", default=[])
     tracking_eval.add_argument("--sequence-runtime-overrides-path", default=None)
     tracking_eval.add_argument("--include-classes", nargs="*", type=int, default=[1])
@@ -146,6 +114,19 @@ def build_parser() -> argparse.ArgumentParser:
     tracking_eval.add_argument("--crowd-boost-min-small-ratio", type=float, default=None)
     tracking_eval.add_argument("--crowd-boost-max-median-area-ratio", type=float, default=None)
     tracking_eval.add_argument("--crowd-boost-small-area-ratio-thresh", type=float, default=None)
+    tracking_eval.add_argument("--cmc-enabled", action=argparse.BooleanOptionalAction, default=None)
+    tracking_eval.add_argument("--cmc-motion-model", default=None)
+    tracking_eval.add_argument("--cmc-ecc-iterations", type=int, default=None)
+    tracking_eval.add_argument("--cmc-ecc-eps", type=float, default=None)
+    tracking_eval.add_argument("--cmc-downscale", type=float, default=None)
+    tracking_eval.add_argument("--aflink-enabled", action=argparse.BooleanOptionalAction, default=None)
+    tracking_eval.add_argument("--aflink-max-gap", type=int, default=None)
+    tracking_eval.add_argument("--aflink-max-center-dist", type=float, default=None)
+    tracking_eval.add_argument("--aflink-max-scale-ratio", type=float, default=None)
+    tracking_eval.add_argument("--aflink-min-track-length", type=int, default=None)
+    tracking_eval.add_argument("--gsi-enabled", action=argparse.BooleanOptionalAction, default=None)
+    tracking_eval.add_argument("--gsi-max-gap", type=int, default=None)
+    tracking_eval.add_argument("--gsi-sigma", type=float, default=None)
 
     avenue = subparsers.add_parser("validate-avenue", help="Run anomaly validation on CUHK Avenue using detection, tracking, and rule-based behavior analysis.")
     avenue.add_argument("--avenue-root", default="data/CUHK_Avenue/Avenue Dataset")
@@ -317,9 +298,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evaluate a behavior classifier checkpoint on a track JSONL dataset.",
     )
     behavior_eval.add_argument("--checkpoint-path", required=True)
+    behavior_eval.add_argument("--secondary-checkpoint-path", default=None)
     behavior_eval.add_argument("--dataset-path", required=True)
     behavior_eval.add_argument("--output-path", default="output/behavior_eval/report.json")
     behavior_eval.add_argument("--device", default="")
+    behavior_eval.add_argument("--ensemble-primary-weight", type=float, default=1.0)
+    behavior_eval.add_argument("--ensemble-mode", default="weighted")
+    behavior_eval.add_argument("--ensemble-loitering-boost", type=float, default=1.0)
     behavior_eval.add_argument("--loitering-min-score", type=float, default=0.595)
     behavior_eval.add_argument("--running-min-score", type=float, default=None)
     behavior_eval.add_argument("--running-loitering-arb-enabled", action=argparse.BooleanOptionalAction, default=True)
@@ -328,11 +313,13 @@ def build_parser() -> argparse.ArgumentParser:
     behavior_eval.add_argument("--running-loitering-max-movement-extent", type=float, default=55.0)
     behavior_eval.add_argument("--running-loitering-max-p90-speed", type=float, default=3.0)
     behavior_eval.add_argument("--loitering-borderline-gate-enabled", action=argparse.BooleanOptionalAction, default=True)
-    behavior_eval.add_argument("--loitering-borderline-gate-max-score", type=float, default=0.76)
+    behavior_eval.add_argument("--loitering-borderline-gate-max-score", type=float, default=0.74)
     behavior_eval.add_argument("--loitering-borderline-gate-min-stationary-ratio", type=float, default=0.70)
     behavior_eval.add_argument("--loitering-borderline-gate-max-movement-extent", type=float, default=70.0)
     behavior_eval.add_argument("--loitering-borderline-gate-max-p90-speed", type=float, default=4.0)
     behavior_eval.add_argument("--loitering-borderline-gate-min-revisit-ratio", type=float, default=0.88)
+    behavior_eval.add_argument("--loitering-borderline-gate-max-straightness", type=float, default=0.95)
+    behavior_eval.add_argument("--loitering-borderline-gate-max-centroid-radius", type=float, default=30.0)
     behavior_eval.add_argument("--running-borderline-gate-enabled", action=argparse.BooleanOptionalAction, default=True)
     behavior_eval.add_argument("--running-borderline-gate-max-score", type=float, default=0.75)
     behavior_eval.add_argument("--running-borderline-gate-min-stationary-ratio", type=float, default=0.80)
@@ -400,7 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     behavior_hardneg.add_argument("--avenue-root", default="data/CUHK_Avenue/Avenue Dataset")
     behavior_hardneg.add_argument("--ground-truth-root", default="data/CUHK_Avenue/ground_truth_demo/testing_label_mask")
-    behavior_hardneg.add_argument("--detector-model", default="output/training/mot17_person_gpu_40e_960_pretrained_w2/weights/best.pt")
+    behavior_hardneg.add_argument("--detector-model", default="output/training/dancetrack_person_v8n_e5_640_b8_w0/weights/best.pt")
     behavior_hardneg.add_argument("--behavior-model-path", default="output/behavior_training/avenue_behavior_mlp_seed2026/best.pt")
     behavior_hardneg.add_argument("--input-dataset", default="output/avenue_pseudo_labels_filtered/tracks_filtered.jsonl")
     behavior_hardneg.add_argument("--output-dir", default="output/behavior_hard_negatives")
@@ -420,42 +407,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.command == "prepare":
-        converter = MOT17ToYOLOConverter(
-            PrepareConfig(
-                mot_root=args.mot_root,
-                output_dir=args.output_dir,
-                split_name=args.split_name,
-                detector_filter=args.detector,
-                min_visibility=args.min_visibility,
-                val_ratio=args.val_ratio,
-                val_sequences=tuple(args.val_sequences),
-                overwrite=args.overwrite,
-                dense_small_repeat_factor=args.dense_small_repeat_factor,
-                dense_small_max_repeat_frames=args.dense_small_max_repeat_frames,
-            dense_small_min_gt_count=args.dense_small_min_gt_count,
-            dense_small_min_small_ratio=args.dense_small_min_small_ratio,
-            dense_small_max_median_area_ratio=args.dense_small_max_median_area_ratio,
-            small_box_area_ratio_thresh=args.small_box_area_ratio_thresh,
-            dense_small_crop_enable=args.dense_small_crop_enable,
-            dense_small_crop_max_frames=args.dense_small_crop_max_frames,
-            dense_small_crop_width_ratio=args.dense_small_crop_width_ratio,
-            dense_small_crop_height_ratio=args.dense_small_crop_height_ratio,
-            dense_small_crop_min_boxes=args.dense_small_crop_min_boxes,
-        )
-        )
-        result = converter.prepare()
-    elif args.command == "calibrate":
-        result = calibrate_behavior_thresholds(
-            CalibrationConfig(
-                mot_root=args.mot_root,
-                output_path=args.output_path,
-                split_name=args.split_name,
-                detector_filter=args.detector,
-                min_visibility=args.min_visibility,
-            )
-        )
-    elif args.command == "train":
+    if args.command == "train":
         result = train_detector(
             TrainConfig(
                 data=args.data,
@@ -537,6 +489,19 @@ def main() -> None:
                 crowd_boost_min_small_ratio=args.crowd_boost_min_small_ratio,
                 crowd_boost_max_median_area_ratio=args.crowd_boost_max_median_area_ratio,
                 crowd_boost_small_area_ratio_thresh=args.crowd_boost_small_area_ratio_thresh,
+                cmc_enabled=args.cmc_enabled,
+                cmc_motion_model=args.cmc_motion_model,
+                cmc_ecc_iterations=args.cmc_ecc_iterations,
+                cmc_ecc_eps=args.cmc_ecc_eps,
+                cmc_downscale=args.cmc_downscale,
+                aflink_enabled=args.aflink_enabled,
+                aflink_max_gap=args.aflink_max_gap,
+                aflink_max_center_dist=args.aflink_max_center_dist,
+                aflink_max_scale_ratio=args.aflink_max_scale_ratio,
+                aflink_min_track_length=args.aflink_min_track_length,
+                gsi_enabled=args.gsi_enabled,
+                gsi_max_gap=args.gsi_max_gap,
+                gsi_sigma=args.gsi_sigma,
             )
         )
     elif args.command == "validate-avenue":
@@ -707,9 +672,13 @@ def main() -> None:
         result = evaluate_behavior_model(
             BehaviorModelEvalConfig(
                 checkpoint_path=args.checkpoint_path,
+                secondary_checkpoint_path=args.secondary_checkpoint_path,
                 dataset_path=args.dataset_path,
                 output_path=args.output_path,
                 device=args.device,
+                ensemble_primary_weight=args.ensemble_primary_weight,
+                ensemble_mode=args.ensemble_mode,
+                ensemble_loitering_boost=args.ensemble_loitering_boost,
                 loitering_min_score=args.loitering_min_score,
                 running_min_score=args.running_min_score,
                 running_loitering_arb_enabled=args.running_loitering_arb_enabled,
@@ -723,6 +692,8 @@ def main() -> None:
                 loitering_borderline_gate_max_movement_extent=args.loitering_borderline_gate_max_movement_extent,
                 loitering_borderline_gate_max_p90_speed=args.loitering_borderline_gate_max_p90_speed,
                 loitering_borderline_gate_min_revisit_ratio=args.loitering_borderline_gate_min_revisit_ratio,
+                loitering_borderline_gate_max_straightness=args.loitering_borderline_gate_max_straightness,
+                loitering_borderline_gate_max_centroid_radius=args.loitering_borderline_gate_max_centroid_radius,
                 running_borderline_gate_enabled=args.running_borderline_gate_enabled,
                 running_borderline_gate_max_score=args.running_borderline_gate_max_score,
                 running_borderline_gate_min_stationary_ratio=args.running_borderline_gate_min_stationary_ratio,

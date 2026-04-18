@@ -2,10 +2,10 @@ source:
   use_camera: false
   camera_id: 0
   video_path: ""
-  mot17_seq: "bs/data/MOT17/train/MOT17-10-FRCNN/img1/%06d.jpg"
+  image_sequence_path: "bs/data/external/dancetrack/val/val/dancetrack0014/img1/%08d.jpg"
 
 model:
-  model_path: "bs/output/training/mot17_person_gpu_40e_960_v8s_fair/weights/best.pt"
+  model_path: "bs/output/training/dancetrack_person_v8n_e5_640_b8_w0/weights/best.pt"
   device: "0"
   imgsz: 960
   augment: true

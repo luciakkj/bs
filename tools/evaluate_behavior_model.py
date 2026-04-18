@@ -16,9 +16,13 @@ from training.config import BehaviorModelEvalConfig
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a behavior classifier checkpoint on a JSONL dataset.")
     parser.add_argument("--checkpoint-path", required=True, help="Path to behavior model checkpoint")
+    parser.add_argument("--secondary-checkpoint-path", default=None, help="Optional secondary behavior model checkpoint for ensemble evaluation")
     parser.add_argument("--dataset-path", required=True, help="Path to tracks.jsonl dataset")
     parser.add_argument("--device", default="", help="Torch device override")
     parser.add_argument("--output-path", required=True, help="Path to output metrics JSON")
+    parser.add_argument("--ensemble-primary-weight", type=float, default=1.0)
+    parser.add_argument("--ensemble-mode", default="weighted")
+    parser.add_argument("--ensemble-loitering-boost", type=float, default=1.0)
     parser.add_argument(
         "--loitering-min-score",
         type=float,
@@ -37,11 +41,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--running-loitering-max-movement-extent", type=float, default=55.0)
     parser.add_argument("--running-loitering-max-p90-speed", type=float, default=3.0)
     parser.add_argument("--loitering-borderline-gate-enabled", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--loitering-borderline-gate-max-score", type=float, default=0.76)
+    parser.add_argument("--loitering-borderline-gate-max-score", type=float, default=0.74)
     parser.add_argument("--loitering-borderline-gate-min-stationary-ratio", type=float, default=0.70)
     parser.add_argument("--loitering-borderline-gate-max-movement-extent", type=float, default=70.0)
     parser.add_argument("--loitering-borderline-gate-max-p90-speed", type=float, default=4.0)
     parser.add_argument("--loitering-borderline-gate-min-revisit-ratio", type=float, default=0.88)
+    parser.add_argument("--loitering-borderline-gate-max-straightness", type=float, default=0.95)
+    parser.add_argument("--loitering-borderline-gate-max-centroid-radius", type=float, default=30.0)
     parser.add_argument("--running-borderline-gate-enabled", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--running-borderline-gate-max-score", type=float, default=0.75)
     parser.add_argument("--running-borderline-gate-min-stationary-ratio", type=float, default=0.80)
@@ -63,9 +69,13 @@ def main() -> None:
     output = evaluate_behavior_model(
         BehaviorModelEvalConfig(
             checkpoint_path=args.checkpoint_path,
+            secondary_checkpoint_path=args.secondary_checkpoint_path,
             dataset_path=args.dataset_path,
             output_path=args.output_path,
             device=args.device,
+            ensemble_primary_weight=args.ensemble_primary_weight,
+            ensemble_mode=args.ensemble_mode,
+            ensemble_loitering_boost=args.ensemble_loitering_boost,
             loitering_min_score=args.loitering_min_score,
             running_min_score=args.running_min_score,
             running_loitering_arb_enabled=args.running_loitering_arb_enabled,
@@ -79,6 +89,8 @@ def main() -> None:
             loitering_borderline_gate_max_movement_extent=args.loitering_borderline_gate_max_movement_extent,
             loitering_borderline_gate_max_p90_speed=args.loitering_borderline_gate_max_p90_speed,
             loitering_borderline_gate_min_revisit_ratio=args.loitering_borderline_gate_min_revisit_ratio,
+            loitering_borderline_gate_max_straightness=args.loitering_borderline_gate_max_straightness,
+            loitering_borderline_gate_max_centroid_radius=args.loitering_borderline_gate_max_centroid_radius,
             running_borderline_gate_enabled=args.running_borderline_gate_enabled,
             running_borderline_gate_max_score=args.running_borderline_gate_max_score,
             running_borderline_gate_min_stationary_ratio=args.running_borderline_gate_min_stationary_ratio,

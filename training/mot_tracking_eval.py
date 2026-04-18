@@ -20,6 +20,7 @@ import motmetrics as mm
 from config import get_config
 from detector.yolo_detector import YOLODetector
 from tracker.byte_tracker import ByteTrackerLite
+from tracker.track_postprocess import apply_aflink, apply_gsi
 from training.config import MOTTrackingEvalConfig
 
 
@@ -250,6 +251,53 @@ def _resolve_runtime_params(cfg: MOTTrackingEvalConfig) -> dict[str, Any]:
             if cfg.crowd_boost_small_area_ratio_thresh is not None
             else float(app_cfg.tracker.crowd_boost_small_area_ratio_thresh)
         ),
+        "cmc_enabled": bool(
+            cfg.cmc_enabled if cfg.cmc_enabled is not None else app_cfg.tracker.cmc_enabled
+        ),
+        "cmc_motion_model": str(
+            cfg.cmc_motion_model if cfg.cmc_motion_model is not None else app_cfg.tracker.cmc_motion_model
+        ),
+        "cmc_ecc_iterations": int(
+            cfg.cmc_ecc_iterations
+            if cfg.cmc_ecc_iterations is not None
+            else app_cfg.tracker.cmc_ecc_iterations
+        ),
+        "cmc_ecc_eps": float(
+            cfg.cmc_ecc_eps if cfg.cmc_ecc_eps is not None else app_cfg.tracker.cmc_ecc_eps
+        ),
+        "cmc_downscale": float(
+            cfg.cmc_downscale if cfg.cmc_downscale is not None else app_cfg.tracker.cmc_downscale
+        ),
+        "aflink_enabled": bool(
+            cfg.aflink_enabled if cfg.aflink_enabled is not None else app_cfg.tracker.aflink_enabled
+        ),
+        "aflink_max_gap": int(
+            cfg.aflink_max_gap if cfg.aflink_max_gap is not None else app_cfg.tracker.aflink_max_gap
+        ),
+        "aflink_max_center_dist": float(
+            cfg.aflink_max_center_dist
+            if cfg.aflink_max_center_dist is not None
+            else app_cfg.tracker.aflink_max_center_dist
+        ),
+        "aflink_max_scale_ratio": float(
+            cfg.aflink_max_scale_ratio
+            if cfg.aflink_max_scale_ratio is not None
+            else app_cfg.tracker.aflink_max_scale_ratio
+        ),
+        "aflink_min_track_length": int(
+            cfg.aflink_min_track_length
+            if cfg.aflink_min_track_length is not None
+            else app_cfg.tracker.aflink_min_track_length
+        ),
+        "gsi_enabled": bool(
+            cfg.gsi_enabled if cfg.gsi_enabled is not None else app_cfg.tracker.gsi_enabled
+        ),
+        "gsi_max_gap": int(
+            cfg.gsi_max_gap if cfg.gsi_max_gap is not None else app_cfg.tracker.gsi_max_gap
+        ),
+        "gsi_sigma": float(
+            cfg.gsi_sigma if cfg.gsi_sigma is not None else app_cfg.tracker.gsi_sigma
+        ),
     }
 
 
@@ -369,6 +417,42 @@ def _write_mot_results(path: Path, rows: list[list[float]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerows(rows)
+
+
+def _build_accumulator_from_rows(
+    rows: list[list[float]],
+    gt_by_frame: dict[int, list[dict[str, float]]],
+    sequence_length: int,
+    min_iou: float,
+) -> mm.MOTAccumulator:
+    accumulator = mm.MOTAccumulator(auto_id=False)
+    tracks_by_frame: dict[int, list[list[float]]] = defaultdict(list)
+    for row in rows:
+        tracks_by_frame[int(row[0])].append(row)
+
+    for frame_id in range(1, sequence_length + 1):
+        gt_entries = gt_by_frame.get(frame_id, [])
+        gt_ids = [int(item["id"]) for item in gt_entries]
+        gt_boxes = np.asarray(
+            [[item["x"], item["y"], item["w"], item["h"]] for item in gt_entries],
+            dtype=float,
+        )
+        frame_tracks = tracks_by_frame.get(frame_id, [])
+        track_ids = [int(item[1]) for item in frame_tracks]
+        if frame_tracks:
+            track_boxes = np.asarray(
+                [[float(item[2]), float(item[3]), float(item[4]), float(item[5])] for item in frame_tracks],
+                dtype=float,
+            )
+        else:
+            track_boxes = np.empty((0, 4), dtype=float)
+        distances = mm.distances.iou_matrix(
+            gt_boxes,
+            track_boxes,
+            max_iou=max(0.0, 1.0 - float(min_iou)),
+        )
+        accumulator.update(gt_ids, track_ids, distances, frameid=frame_id)
+    return accumulator
 
 
 def _jsonify(value: Any) -> Any:
@@ -496,9 +580,13 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
             crowd_boost_min_small_ratio=seq_runtime["crowd_boost_min_small_ratio"],
             crowd_boost_max_median_area_ratio=seq_runtime["crowd_boost_max_median_area_ratio"],
             crowd_boost_small_area_ratio_thresh=seq_runtime["crowd_boost_small_area_ratio_thresh"],
+            cmc_enabled=seq_runtime["cmc_enabled"],
+            cmc_motion_model=seq_runtime["cmc_motion_model"],
+            cmc_ecc_iterations=seq_runtime["cmc_ecc_iterations"],
+            cmc_ecc_eps=seq_runtime["cmc_ecc_eps"],
+            cmc_downscale=seq_runtime["cmc_downscale"],
         )
-        accumulator = mm.MOTAccumulator(auto_id=False)
-        mot_rows: list[list[float]] = []
+        mot_rows_raw: list[list[float]] = []
         detections_total = 0
         tracks_total = 0
         seq_started = time.perf_counter()
@@ -514,25 +602,9 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
             detections_total += len(detections)
             tracks_total += len(tracks)
 
-            gt_entries = gt_by_frame.get(frame_id, [])
-            gt_ids = [int(item["id"]) for item in gt_entries]
-            gt_boxes = np.asarray(
-                [[item["x"], item["y"], item["w"], item["h"]] for item in gt_entries],
-                dtype=float,
-            )
-
-            track_ids = [int(item[4]) for item in tracks]
-            track_boxes = np.asarray([_mot_box_from_track(item) for item in tracks], dtype=float)
-            distances = mm.distances.iou_matrix(
-                gt_boxes,
-                track_boxes,
-                max_iou=max(0.0, 1.0 - float(cfg.min_iou)),
-            )
-            accumulator.update(gt_ids, track_ids, distances, frameid=frame_id)
-
             for item in tracks:
                 x1, y1, x2, y2, track_id, score = item
-                mot_rows.append(
+                mot_rows_raw.append(
                     [
                         frame_id,
                         int(track_id),
@@ -548,11 +620,33 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
                 )
 
         seq_seconds = time.perf_counter() - seq_started
+        mot_rows_processed = apply_aflink(
+            mot_rows_raw,
+            enabled=seq_runtime["aflink_enabled"],
+            max_gap=seq_runtime["aflink_max_gap"],
+            max_center_dist=seq_runtime["aflink_max_center_dist"],
+            max_scale_ratio=seq_runtime["aflink_max_scale_ratio"],
+            min_track_length=seq_runtime["aflink_min_track_length"],
+        )
+        mot_rows_processed = apply_gsi(
+            mot_rows_processed,
+            enabled=seq_runtime["gsi_enabled"],
+            max_gap=seq_runtime["gsi_max_gap"],
+            sigma=seq_runtime["gsi_sigma"],
+        )
+        accumulator = _build_accumulator_from_rows(
+            mot_rows_processed,
+            gt_by_frame,
+            sequence_length,
+            cfg.min_iou,
+        )
         accumulators.append(accumulator)
         accumulator_names.append(seq_dir.name)
 
         if cfg.save_mot_dir:
-            _write_mot_results(cfg.save_mot_dir / f"{seq_dir.name}.txt", mot_rows)
+            _write_mot_results(cfg.save_mot_dir / f"{seq_dir.name}.txt", mot_rows_processed)
+
+        processed_tracks_total = len(mot_rows_processed)
 
         sequence_reports.append(
             {
@@ -564,8 +658,10 @@ def evaluate_mot_tracking(config: MOTTrackingEvalConfig) -> dict[str, Any]:
                 ),
                 "detections_total": int(detections_total),
                 "tracks_total": int(tracks_total),
+                "tracks_total_postprocess": int(processed_tracks_total),
                 "avg_detections_per_frame": float(detections_total / max(sequence_length, 1)),
                 "avg_tracks_per_frame": float(tracks_total / max(sequence_length, 1)),
+                "avg_tracks_per_frame_postprocess": float(processed_tracks_total / max(sequence_length, 1)),
                 "runtime_seconds": float(seq_seconds),
                 "fps_tracking_eval": float(sequence_length / seq_seconds) if seq_seconds > 0 else None,
                 "runtime_overrides_applied": {

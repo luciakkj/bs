@@ -3,7 +3,11 @@
     "crowd_boost_enabled": false,
     "low_match_thresh": 0.45,
     "new_track_thresh": 0.765,
-    "appearance_weight": 0.39
+    "appearance_weight": 0.39,
+    "aflink_max_gap": 40,
+    "aflink_max_center_dist": 150.0,
+    "aflink_max_scale_ratio": 2.0,
+    "aflink_min_track_length": 2
   },
   "dancetrack0019": {
     "crowd_boost_enabled": false,
@@ -11,7 +15,11 @@
     "low_match_thresh": 0.45,
     "new_track_thresh": 0.77,
     "appearance_weight": 0.4,
-    "appearance_ambiguity_margin": 0.3
+    "appearance_ambiguity_margin": 0.3,
+    "aflink_max_gap": 40,
+    "aflink_max_center_dist": 150.0,
+    "aflink_max_scale_ratio": 2.0,
+    "aflink_min_track_length": 2
   },
   "dancetrack0034": {
     "crowd_boost_enabled": false,
@@ -24,10 +32,11 @@
     "low_match_thresh": 0.45,
     "new_track_thresh": 0.765,
     "track_stability_weight": 0.005,
-    "appearance_weight": 0.39
+    "appearance_weight": 0.4,
+    "appearance_ambiguity_margin": 0.3
   },
   "dancetrack0081": {
-    "crowd_appearance_weight": 0.48,
+    "crowd_appearance_weight": 0.5,
     "crowd_low_match_thresh": 0.44,
     "new_track_thresh": 0.755
   },
@@ -35,6 +44,10 @@
     "crowd_boost_enabled": false,
     "low_match_thresh": 0.45,
     "new_track_thresh": 0.765,
-    "appearance_weight": 0.39
+    "appearance_weight": 0.39,
+    "aflink_max_gap": 40,
+    "aflink_max_center_dist": 150.0,
+    "aflink_max_scale_ratio": 2.0,
+    "aflink_min_track_length": 2
   }
 }

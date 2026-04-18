@@ -1,45 +1,39 @@
 source:
   use_camera: false
   camera_id: 0
-  video_path: ""
-  image_sequence_path: "bs/data/external/dancetrack/val/val/dancetrack0014/img1/%08d.jpg"
+  video_path: "bs/data/CUHK_Avenue/Avenue Dataset/testing_videos/01.avi"
+  image_sequence_path: ""
 
 model:
   model_path: "bs/output/training/dancetrack_person_v8n_e5_640_b8_w0/weights/best.pt"
   device: "0"
   imgsz: 640
-  nms_iou: 0.7
+  half: true
   augment: false
   runtime_profile: "balanced"
-  predict_conf: 0.23
-  conf_threshold: 0.23
+  predict_conf: 0.20
+  conf_threshold: 0.20
   classes: [0]
 
 tracker:
-  track_high_thresh: 0.52
-  track_low_thresh: 0.16
-  new_track_thresh: 0.75
-  match_thresh: 0.76
-  low_match_thresh: 0.43
-  unconfirmed_match_thresh: 0.62
-  max_time_lost: 13
+  track_high_thresh: 0.5
+  track_low_thresh: 0.10
+  new_track_thresh: 0.58
+  match_thresh: 0.8
+  low_match_thresh: 0.5
+  unconfirmed_match_thresh: 0.7
+  max_time_lost: 30
   min_box_area: 10.0
   appearance_enabled: true
-  appearance_weight: 0.43
-  appearance_ambiguity_margin: 0.305
-  appearance_feature_mode: "deep_reid"
+  appearance_weight: 0.05
+  appearance_ambiguity_margin: 0.03
+  appearance_feature_mode: "hsv"
   appearance_hist_bins: [6, 3, 3]
   appearance_min_box_size: 16
   appearance_reid_model: "mobilenet_v3_small"
   appearance_reid_weights: ""
   appearance_reid_device: "0"
   appearance_reid_input_size: [256, 128]
-  crowd_boost_enabled: true
-  crowd_boost_det_count: 16
-  crowd_match_thresh: 0.76
-  crowd_low_match_thresh: 0.445
-  crowd_new_track_confirm_frames: 2
-  crowd_appearance_weight: 0.49
 
 behavior:
   roi: [200, 120, 500, 420]
@@ -57,17 +51,17 @@ behavior:
   running_speed: 15.57
   running_frames: 3
   behavior_model_path: "bs/output/behavior_training/avenue_behavior_temporal_trainsplit_v2_seq72_seqval_seed42/best.pt"
-  behavior_secondary_model_path: "bs/output/behavior_training/avenue_behavior_temporal_v2_seq72_seqval_trainfp16_core_relax024_20260406/best.pt"
-  behavior_ensemble_primary_weight: 0.9775
+  behavior_secondary_model_path: ""
+  behavior_ensemble_primary_weight: 1.0
   behavior_ensemble_mode: "weighted"
   behavior_model_score_thresh: 0.96
   behavior_model_min_frames: 15
-  behavior_model_max_tracks: 30
-  behavior_model_resume_tracks: 26
-  behavior_secondary_max_tracks: 24
-  behavior_secondary_resume_tracks: 18
+  behavior_model_max_tracks: 16
+  behavior_model_resume_tracks: 14
+  behavior_secondary_max_tracks: 0
+  behavior_secondary_resume_tracks: 0
   behavior_secondary_loitering_only: true
-  behavior_model_eval_interval: 3
+  behavior_model_eval_interval: 5
   loitering_hybrid_mode: "model_support"
   loitering_model_support_thresh: 0.85
   loitering_model_score_thresh: 0.96
@@ -76,6 +70,11 @@ behavior:
   loitering_activate_frames: 1
   loitering_support_activate_frames: 4
   loitering_release_frames: 1
+  running_loitering_arb_enabled: false
+  running_loitering_min_loitering_score: 0.72
+  running_loitering_min_stationary_ratio: 0.90
+  running_loitering_max_movement_extent: 50.0
+  running_loitering_max_p90_speed: 3.0
   loitering_model_max_avg_speed: 2.2
   loitering_model_max_movement_extent: 75.0
   loitering_model_max_centroid_radius: 40.0

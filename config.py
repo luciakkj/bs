@@ -9,12 +9,12 @@ class SourceConfig:
     use_camera: bool = False
     camera_id: int = 0
     video_path: str = ""
-    mot17_seq: str = "bs/data/MOT17/train/MOT17-10-FRCNN/img1/%06d.jpg"
+    image_sequence_path: str = ""
 
 
 @dataclass
 class ModelConfig:
-    model_path: str = "bs/models/yolov8n.pt"
+    model_path: str = "bs/output/training/dancetrack_person_v8n_e5_640_b8_w0/weights/best.pt"
     device: str | int | None = None
     imgsz: int | None = None
     max_det: int | None = None
@@ -64,6 +64,19 @@ class TrackerConfig:
     crowd_boost_min_small_ratio: float | None = None
     crowd_boost_max_median_area_ratio: float | None = None
     crowd_boost_small_area_ratio_thresh: float = 0.002
+    cmc_enabled: bool = False
+    cmc_motion_model: str = "affine"
+    cmc_ecc_iterations: int = 50
+    cmc_ecc_eps: float = 1e-4
+    cmc_downscale: float = 1.0
+    aflink_enabled: bool = False
+    aflink_max_gap: int = 30
+    aflink_max_center_dist: float = 120.0
+    aflink_max_scale_ratio: float = 1.8
+    aflink_min_track_length: int = 3
+    gsi_enabled: bool = False
+    gsi_max_gap: int = 20
+    gsi_sigma: float = 1.0
 
 
 @dataclass
@@ -212,8 +225,8 @@ def get_config(path="config.yaml") -> AppConfig:
     if source_data.get("video_path"):
         source_data["video_path"] = resolve_path(source_data["video_path"])
 
-    if source_data.get("mot17_seq"):
-        source_data["mot17_seq"] = resolve_path(source_data["mot17_seq"])
+    if source_data.get("image_sequence_path"):
+        source_data["image_sequence_path"] = resolve_path(source_data["image_sequence_path"])
 
     if model_data.get("model_path"):
         model_data["model_path"] = resolve_path(model_data["model_path"])
